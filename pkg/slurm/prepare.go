@@ -240,8 +240,7 @@ func prepareEnvs(Ctx context.Context, container v1.Container) []string {
 		attribute.String("prepareenvs.container.name", container.Name),
 		attribute.Int64("prepareenvs.duration", duration),
 		attribute.StringSlice("prepareenvs.container.envs", envs),
-		attribute.StringSlice("prepareenvs.container.envs_data", envs_data)
-	))
+		attribute.StringSlice("prepareenvs.container.envs_data", envs_data)))
 	return envs
 }
 
