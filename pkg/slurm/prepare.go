@@ -246,7 +246,7 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 		envs, envs_data, err = createEnvFile(Ctx, config, podData, container)
 		if err != nil {
 			log.G(Ctx).Error(err)
-			return "", err
+			return nil, err
 		}
 	}
 
