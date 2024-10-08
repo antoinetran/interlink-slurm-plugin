@@ -185,13 +185,6 @@ func (h *SidecarHandler) LoadJIDs() error {
 	return nil
 }
 
-func handleError(Ctx context.Context, err error) (String, error) {
-	if err != nil {
-		log.G(Ctx).Error(err)
-		return "", err
-	}
-}
-
 // prepareEnvs reads all Environment variables from a container and append them to a envfile.properties. The values are bash-escaped.
 // It returns the slice containing, if there are Environment variables, the arguments for envfile and its path, or else an empty array.
 func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.RetrievedPodData, container v1.Container) []string {
@@ -238,6 +231,9 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 			log.G(Ctx).Error(err)
 			return "", err
 		}
+		
+		// Calling Close() in case of error. If not error, the defer will close it again but it should be idempotent.
+		envfile.Close()
 	}
 
 	duration := time.Now().UnixMicro() - start
@@ -247,8 +243,6 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 		attribute.StringSlice("prepareenvs.container.envs", envs),
 		attribute.StringSlice("prepareenvs.container.envs_data", envs_data)))
 
-	// Calling Close() in case of error. If not error, the defer will close it again but it should be idempotent.
-	envfile.Close()
 	return envs
 }
 
