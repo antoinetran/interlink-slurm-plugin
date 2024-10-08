@@ -185,17 +185,11 @@ func (h *SidecarHandler) LoadJIDs() error {
 	return nil
 }
 
-// prepareEnvs reads all Environment variables from a container and append them to a envfile.properties. The values are bash-escaped.
-// It returns the slice containing, if there are Environment variables, the arguments for envfile and its path, or else an empty array.
-func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.RetrievedPodData, container v1.Container) []string {
-	start := time.Now().UnixMicro()
-	span := trace.SpanFromContext(Ctx)
-	span.AddEvent("Preparing ENVs for container " + container.Name)
-	var envs []string = []string{}
-	// For debugging purpose only
-	envs_data := []string{}
-
-	if len(container.Env) > 0 {
+func createEnvFile(Ctx context.Context, config SlurmConfig, podData commonIL.RetrievedPodData, container v1.Container) ([]string, []string, error) {
+		envs := []string{}
+		// For debugging purpose only
+		envs_data := []string{}
+	
 		envfilePath := (config.DataRootFolder + podData.Pod.Namespace + "-" + string(podData.Pod.UID) + "/" + "envfile.properties")
 		log.G(Ctx).Info("-- Appending envs using envfile " + envfilePath)
 		envs = append(envs, "--env-file")
@@ -204,7 +198,7 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 		envfile, err := os.Create(envfilePath)
 		if err != nil {
 			log.G(Ctx).Error(err)
-			return "", err
+			return "", "", err
 		}
 		defer envfile.Close()
 		
@@ -219,7 +213,7 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 			_, err = envfile.WriteString(tmp + "\n")
 			if err != nil {
 				log.G(Ctx).Error(err)
-				return "", err
+				return "", "", err
 			} else {
 				log.G(Ctx).Debug("---- Written envfile file " + envfilePath + " key " + envVar.Name + " value " + tmpValue)
 			}
@@ -229,11 +223,31 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 		err = envfile.Sync()
 		if err != nil {
 			log.G(Ctx).Error(err)
-			return "", err
+			return "", "", err
 		}
 		
 		// Calling Close() in case of error. If not error, the defer will close it again but it should be idempotent.
 		envfile.Close()
+		
+		return envs, envs_data, nil
+}
+
+// prepareEnvs reads all Environment variables from a container and append them to a envfile.properties. The values are bash-escaped.
+// It returns the slice containing, if there are Environment variables, the arguments for envfile and its path, or else an empty array.
+func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.RetrievedPodData, container v1.Container) []string {
+	start := time.Now().UnixMicro()
+	span := trace.SpanFromContext(Ctx)
+	span.AddEvent("Preparing ENVs for container " + container.Name)
+	var envs []string = []string{}
+	// For debugging purpose only
+	envs_data := []string{}
+
+	if len(container.Env) > 0 {
+		envs, envs_data, err = createEnvFile(Ctx, config, podData, container)
+		if err != nil {
+			log.G(Ctx).Error(err)
+			return "", err
+		}
 	}
 
 	duration := time.Now().UnixMicro() - start
