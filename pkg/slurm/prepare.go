@@ -198,7 +198,7 @@ func createEnvFile(Ctx context.Context, config SlurmConfig, podData commonIL.Ret
 		envfile, err := os.Create(envfilePath)
 		if err != nil {
 			log.G(Ctx).Error(err)
-			return "", "", err
+			return nil, nil, err
 		}
 		defer envfile.Close()
 		
@@ -213,7 +213,7 @@ func createEnvFile(Ctx context.Context, config SlurmConfig, podData commonIL.Ret
 			_, err = envfile.WriteString(tmp + "\n")
 			if err != nil {
 				log.G(Ctx).Error(err)
-				return "", "", err
+				return nil, nil, err
 			} else {
 				log.G(Ctx).Debug("---- Written envfile file " + envfilePath + " key " + envVar.Name + " value " + tmpValue)
 			}
@@ -223,7 +223,7 @@ func createEnvFile(Ctx context.Context, config SlurmConfig, podData commonIL.Ret
 		err = envfile.Sync()
 		if err != nil {
 			log.G(Ctx).Error(err)
-			return "", "", err
+			return nil, nil, err
 		}
 		
 		// Calling Close() in case of error. If not error, the defer will close it again but it should be idempotent.
