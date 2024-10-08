@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
 	exec2 "github.com/alexellis/go-execute/pkg/v1"
 	"github.com/containerd/containerd/log"
-	"gopkg.in/alessio/shellescape.v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 

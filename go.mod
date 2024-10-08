@@ -5,6 +5,7 @@ go 1.22
 toolchain go1.22.4
 
 require (
+	al.essio.dev/pkg/shellescape v1.5.0
 	github.com/alexellis/go-execute v0.6.0
 	github.com/containerd/containerd v1.7.6
 	github.com/intertwin-eu/interlink v0.0.0-20240829090340-24c45973f3ec
@@ -16,7 +17,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.27.0
 	google.golang.org/grpc v1.64.0
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/alessio/shellescape.v1 v1.5.0
 	k8s.io/api v0.29.1
 	k8s.io/apimachinery v0.29.1
 	k8s.io/client-go v0.29.1
