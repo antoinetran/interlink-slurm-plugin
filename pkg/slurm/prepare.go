@@ -193,7 +193,7 @@ func prepareEnvs(Ctx context.Context, container v1.Container) []string {
 	span.AddEvent("Preparing ENVs for container " + container.Name)
 	var envs []string = []string{}
 	// For debugging purpose only
-	var envs_data []string{} = []string{}
+	envs_data []string{} := []string{}
 
 	if len(container.Env) > 0 {
 		envfilePath := (config.DataRootFolder + podData.Pod.Namespace + "-" + string(podData.Pod.UID) + "/" + "envfile.properties")
