@@ -210,7 +210,7 @@ func createEnvFile(Ctx context.Context, config SlurmConfig, podData commonIL.Ret
 			
 			envs_data = append(envs_data, tmp)
 			
-			_, err = envfile.WriteString(tmp + "\n")
+			_, err := envfile.WriteString(tmp + "\n")
 			if err != nil {
 				log.G(Ctx).Error(err)
 				return nil, nil, err
@@ -220,7 +220,7 @@ func createEnvFile(Ctx context.Context, config SlurmConfig, podData commonIL.Ret
 		}
 		
 		// All env variables are written, we flush it now. 
-		err = envfile.Sync()
+		err := envfile.Sync()
 		if err != nil {
 			log.G(Ctx).Error(err)
 			return nil, nil, err
@@ -243,7 +243,7 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 	envs_data := []string{}
 
 	if len(container.Env) > 0 {
-		envs, envs_data, err = createEnvFile(Ctx, config, podData, container)
+		envs, envs_data, err := createEnvFile(Ctx, config, podData, container)
 		if err != nil {
 			log.G(Ctx).Error(err)
 			return nil, err
