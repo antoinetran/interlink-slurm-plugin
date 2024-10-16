@@ -493,7 +493,7 @@ func produceSLURMScript(
 
 		if singularityCommand.containerCommand != nil {
 			// Case the pod specified a container entrypoint array to override.
-			for i, commandEntry := range singularityCommand.containerCommand {
+			for _, commandEntry := range singularityCommand.containerCommand {
 				stringToBeWritten.WriteString(" ")
 				// We convert from GO array to shell command, so escaping is important to avoid space, quote issues and injection vulnerabilities.
 				stringToBeWritten.WriteString(shellescape.Quote(commandEntry))
@@ -501,7 +501,7 @@ func produceSLURMScript(
 		}
 		if singularityCommand.containerArgs != nil {
 			// Case the pod specified a container command array to override.
-			for i, argsEntry := range singularityCommand.containerArgs {
+			for _, argsEntry := range singularityCommand.containerArgs {
 				stringToBeWritten.WriteString(" ")
 				// We convert from GO array to shell command, so escaping is important to avoid space, quote issues and injection vulnerabilities.
 				stringToBeWritten.WriteString(shellescape.Quote(argsEntry))
