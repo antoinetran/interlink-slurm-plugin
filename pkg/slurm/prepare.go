@@ -190,7 +190,7 @@ func createEnvFile(Ctx context.Context, config SlurmConfig, podData commonIL.Ret
 		// For debugging purpose only
 		envs_data := []string{}
 	
-		envfilePath := (config.DataRootFolder + podData.Pod.Namespace + "-" + string(podData.Pod.UID) + "/" + "envfile.properties")
+		envfilePath := (config.DataRootFolder + podData.Pod.Namespace + "-" + string(podData.Pod.UID) + "/" + "envfile_" + container.Name + ".properties")
 		log.G(Ctx).Info("-- Appending envs using envfile " + envfilePath)
 		envs = append(envs, "--env-file")
 		envs = append(envs, envfilePath)
