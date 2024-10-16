@@ -517,7 +517,7 @@ func produceSLURMScript(
 		
 		if ! singularityCommand.isInitContainer {
 			// Not init containers are run in parallel.
-			stringToBeWritten.WriteString(; sleep 30 &")
+			stringToBeWritten.WriteString("; sleep 30 &")
 		}
 	}
 
