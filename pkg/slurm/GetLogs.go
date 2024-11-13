@@ -1,10 +1,13 @@
 package slurm
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +19,73 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
 )
+
+// Logs in follow mode (get logs until the death of the container) with "kubectl -f".
+func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Request, path string, req commonIL.LogStruct, containerOutputPath string, containerOutput []byte) error {
+	// Follow until this file exist, that indicates the end of container, thus the end of following.
+	containerStatusPath := path + "/" + req.ContainerName + ".status"
+	// Get the offset of what we read.
+	containerOutputLastOffset := len(containerOutput)
+	log.G(h.Ctx).Debug("Read container " + containerStatusPath + " with current length/offset: " + strconv.Itoa(containerOutputLastOffset))
+
+	containerOutputFd, err := os.Open(containerOutputPath)
+	if err != nil {
+		w.Write([]byte(err.Error() + ": could not open file to follow logs at " + containerOutputPath))
+		return err
+	}
+	defer containerOutputFd.Close()
+
+	// We follow only from after what is already read.
+	_, err = containerOutputFd.Seek(int64(containerOutputLastOffset), 0)
+	if err != nil {
+		w.Write([]byte(err.Error() + ": could not seek offset " + strconv.Itoa(containerOutputLastOffset) + " of file to follow logs at " + containerOutputPath))
+		return err
+	}
+
+	containerOutputReader := bufio.NewReader(containerOutputFd)
+
+	bufferBytes := make([]byte, 4096)
+
+	// Looping until we get end of job.
+	// TODO: handle the Ctrl+C of kubectl logs.
+	var isContainerDead bool = false
+	for {
+		n, err := containerOutputReader.Read(bufferBytes)
+		if err != nil {
+			if err == io.EOF {
+				// Nothing more to read, but in follow mode, is the container still alive?
+				if isContainerDead {
+					// Container already marked as dead, and we tried to get logs one last time. Exiting the loop.
+					log.G(h.Ctx).Info("Container is found dead and no more logs are found at this step, exiting following mode...")
+					break
+				}
+				// Checking if container is dead (meaning the status file exist).
+				if _, err := os.Stat(containerStatusPath); errors.Is(err, os.ErrNotExist) {
+					// The status file of the container does not exist, so the container is still alive. Continuing to follow logs.
+					// Sleep because otherwise it can be a stress to file system to always read it when it has nothing.
+					log.G(h.Ctx).Debug("EOF of container logs, sleeping before retrying...")
+					time.Sleep(2 * time.Second)
+				} else {
+					// The status file exist, so the container is dead. Trying to get the latest log one last time.
+					// Because the moment we found the status file, there might be some more logs to read.
+					isContainerDead = true
+					log.G(h.Ctx).Info("Container is found dead, reading last logs...")
+				}
+				continue
+			} else {
+				// Error during read.
+				return err
+			}
+		}
+		_, err = w.Write(bufferBytes[:n])
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			log.G(h.Ctx).Error(err)
+		}
+	}
+	// No error, err = nil
+	return nil
+}
 
 // GetLogsHandler reads Jobs' output file to return what's logged inside.
 // What's returned is based on the provided parameters (Tail/LimitBytes/Timestamps/etc)
@@ -60,31 +130,30 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	)
 
 	path := h.Config.DataRootFolder + req.Namespace + "-" + req.PodUID
+	containerOutputPath := path + "/" + req.ContainerName + ".out"
 	var output []byte
 	if req.Opts.Timestamps {
 		h.handleError(spanCtx, w, statusCode, err)
 		return
-	} else {
-		log.G(h.Ctx).Info("Reading  " + path + "/" + req.ContainerName + ".out")
-		containerOutput, err1 := os.ReadFile(path + "/" + req.ContainerName + ".out")
-		if err1 != nil {
-			log.G(h.Ctx).Error("Failed to read container logs.")
-		}
-		jobOutput, err2 := os.ReadFile(path + "/" + "job.out")
-		if err2 != nil {
-			log.G(h.Ctx).Error("Failed to read job logs.")
-		}
-
-		if err1 != nil && err2 != nil {
-			span.AddEvent("Error retrieving logs")
-			h.handleError(spanCtx, w, statusCode, err)
-			return
-		}
-
-		output = append(output, jobOutput...)
-		output = append(output, containerOutput...)
-
 	}
+	log.G(h.Ctx).Info("Reading  " + path + "/" + req.ContainerName + ".out")
+	containerOutput, err1 := os.ReadFile(containerOutputPath)
+	if err1 != nil {
+		log.G(h.Ctx).Error("Failed to read container logs.")
+	}
+	jobOutput, err2 := os.ReadFile(path + "/" + "job.out")
+	if err2 != nil {
+		log.G(h.Ctx).Error("Failed to read job logs.")
+	}
+
+	if err1 != nil && err2 != nil {
+		span.AddEvent("Error retrieving logs")
+		h.handleError(spanCtx, w, statusCode, err)
+		return
+	}
+
+	output = append(output, jobOutput...)
+	output = append(output, containerOutput...)
 
 	var returnedLogs string
 
@@ -147,5 +216,12 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	} else {
 		w.WriteHeader(statusCode)
 		w.Write([]byte(returnedLogs))
+
+		if req.Opts.Follow {
+			err := h.GetLogsFollowMode(w, r, path, req, containerOutputPath, containerOutput)
+			if err != nil {
+				log.G(h.Ctx).Error("Failed to read container logs.")
+			}
+		}
 	}
 }
