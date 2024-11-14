@@ -31,10 +31,25 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 	containerOutputLastOffset := len(containerOutput)
 	log.G(h.Ctx).Debug("Read container " + containerStatusPath + " with current length/offset: " + strconv.Itoa(containerOutputLastOffset))
 
-	containerOutputFd, err := os.Open(containerOutputPath)
-	if err != nil {
-		w.Write([]byte(err.Error() + ": could not open file to follow logs at " + containerOutputPath))
-		return err
+	var containerOutputFd *os.File
+	var err error
+	for {
+		containerOutputFd, err = os.Open(containerOutputPath)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				// Case the file does not exist yet, we loop until it exist.
+				log.G(h.Ctx).Debug("Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying...")
+				time.Sleep(2 * time.Second)
+				continue
+			} else {
+				// Case unknown error.
+				w.Write([]byte(err.Error() + ": could not open file to follow logs at " + containerOutputPath))
+				return err
+			}
+		}
+		// File exist.
+		log.G(h.Ctx).Debug("Opened for follow mode the container logs " + containerOutputPath)
+		break
 	}
 	defer containerOutputFd.Close()
 
