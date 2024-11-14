@@ -2,9 +2,12 @@ package slurm
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"strconv"
@@ -87,6 +90,22 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
+func (h *SidecarHandler) readLogs(logsPath string, span trace.Span, ctx context.Context, w http.ResponseWriter, statusCode int) ([]byte, error) {
+	output, err := os.ReadFile(logsPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// Case file does not exist yet. This is normal, returning empty array.
+			output = make([]byte, 0)
+		} else {
+			span.AddEvent("Error retrieving logs")
+			errWithContext := fmt.Errorf("failed to read logs at %s: %s %w", logsPath, fmt.Sprintf("%#v", err), err)
+			h.handleError(ctx, w, statusCode, errWithContext)
+			return nil, err
+		}
+	}
+	return output, nil
+}
+
 // GetLogsHandler reads Jobs' output file to return what's logged inside.
 // What's returned is based on the provided parameters (Tail/LimitBytes/Timestamps/etc)
 func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) {
@@ -137,18 +156,12 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	log.G(h.Ctx).Info("Reading  " + path + "/" + req.ContainerName + ".out")
-	containerOutput, err1 := os.ReadFile(containerOutputPath)
-	if err1 != nil {
-		log.G(h.Ctx).Error("Failed to read container logs.")
+	containerOutput, err := h.readLogs(containerOutputPath, span, spanCtx, w, statusCode)
+	if err != nil {
+		return
 	}
-	jobOutput, err2 := os.ReadFile(path + "/" + "job.out")
-	if err2 != nil {
-		log.G(h.Ctx).Error("Failed to read job logs.")
-	}
-
-	if err1 != nil && err2 != nil {
-		span.AddEvent("Error retrieving logs")
-		h.handleError(spanCtx, w, statusCode, err)
+	jobOutput, err := h.readLogs(path+"/"+"job.out", span, spanCtx, w, statusCode)
+	if err != nil {
 		return
 	}
 
