@@ -56,8 +56,9 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 	// We follow only from after what is already read.
 	_, err = containerOutputFd.Seek(int64(containerOutputLastOffset), 0)
 	if err != nil {
-		w.Write([]byte(err.Error() + ": could not seek offset " + strconv.Itoa(containerOutputLastOffset) + " of file to follow logs at " + containerOutputPath))
-		return err
+		errWithContext := fmt.Errorf("error during Seek() of GetLogsFollowMode() in GetLogsHandler of file %s offset %d type: %s %w", containerOutputPath, containerOutputLastOffset, fmt.Sprintf("%#v", err), err)
+		w.Write([]byte(errWithContext.Error()))
+		return errWithContext
 	}
 
 	containerOutputReader := bufio.NewReader(containerOutputFd)
@@ -82,7 +83,7 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 					// The status file of the container does not exist, so the container is still alive. Continuing to follow logs.
 					// Sleep because otherwise it can be a stress to file system to always read it when it has nothing.
 					log.G(h.Ctx).Debug("EOF of container logs, sleeping before retrying...")
-					time.Sleep(2 * time.Second)
+					time.Sleep(4 * time.Second)
 				} else {
 					// The status file exist, so the container is dead. Trying to get the latest log one last time.
 					// Because the moment we found the status file, there might be some more logs to read.
@@ -105,7 +106,14 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 	return nil
 }
 
-func (h *SidecarHandler) readLogs(logsPath string, span trace.Span, ctx context.Context, w http.ResponseWriter, statusCode int) ([]byte, error) {
+func (h *SidecarHandler) logErrorVerbose(context string, ctx context.Context, w http.ResponseWriter, err error) {
+	errWithContext := fmt.Errorf("error context: %s type: %s %w", context, fmt.Sprintf("%#v", err), err)
+	log.G(h.Ctx).Error(errWithContext)
+	statusCode := http.StatusInternalServerError
+	h.handleError(ctx, w, statusCode, errWithContext)
+}
+
+func (h *SidecarHandler) readLogs(logsPath string, span trace.Span, ctx context.Context, w http.ResponseWriter) ([]byte, error) {
 	output, err := os.ReadFile(logsPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -113,8 +121,7 @@ func (h *SidecarHandler) readLogs(logsPath string, span trace.Span, ctx context.
 			output = make([]byte, 0)
 		} else {
 			span.AddEvent("Error retrieving logs")
-			errWithContext := fmt.Errorf("failed to read logs at %s: %s %w", logsPath, fmt.Sprintf("%#v", err), err)
-			h.handleError(ctx, w, statusCode, errWithContext)
+			h.logErrorVerbose("Error during ReadFile() of readLogs() in GetLogsHandler of file "+logsPath, ctx, w, err)
 			return nil, err
 		}
 	}
@@ -140,14 +147,14 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		h.handleError(spanCtx, w, statusCode, err)
+		h.logErrorVerbose("Error during ReadAll() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
 		return
 	}
 
 	err = json.Unmarshal(bodyBytes, &req)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		h.handleError(spanCtx, w, statusCode, err)
+		h.logErrorVerbose("Error during Unmarshal() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
 		return
 	}
 
@@ -167,15 +174,15 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	containerOutputPath := path + "/" + req.ContainerName + ".out"
 	var output []byte
 	if req.Opts.Timestamps {
-		h.handleError(spanCtx, w, statusCode, err)
+		h.logErrorVerbose("Unsupported option req.Opts.Timestamps", spanCtx, w, err)
 		return
 	}
 	log.G(h.Ctx).Info("Reading  " + path + "/" + req.ContainerName + ".out")
-	containerOutput, err := h.readLogs(containerOutputPath, span, spanCtx, w, statusCode)
+	containerOutput, err := h.readLogs(containerOutputPath, span, spanCtx, w)
 	if err != nil {
 		return
 	}
-	jobOutput, err := h.readLogs(path+"/"+"job.out", span, spanCtx, w, statusCode)
+	jobOutput, err := h.readLogs(path+"/"+"job.out", span, spanCtx, w)
 	if err != nil {
 		return
 	}
@@ -239,17 +246,13 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 
 	commonIL.SetDurationSpan(start, span, commonIL.WithHTTPReturnCode(statusCode))
 
-	if statusCode != http.StatusOK {
-		w.Write([]byte("Some errors occurred while checking container status. Check Docker Sidecar's logs"))
-	} else {
-		w.WriteHeader(statusCode)
-		w.Write([]byte(returnedLogs))
+	w.WriteHeader(statusCode)
+	w.Write([]byte(returnedLogs))
 
-		if req.Opts.Follow {
-			err := h.GetLogsFollowMode(w, r, path, req, containerOutputPath, containerOutput)
-			if err != nil {
-				log.G(h.Ctx).Error("Failed to read container logs.")
-			}
+	if req.Opts.Follow {
+		err := h.GetLogsFollowMode(w, r, path, req, containerOutputPath, containerOutput)
+		if err != nil {
+			h.logErrorVerbose("Follow mode error", spanCtx, w, err)
 		}
 	}
 }
