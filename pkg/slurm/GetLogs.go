@@ -25,12 +25,12 @@ import (
 )
 
 // Logs in follow mode (get logs until the death of the container) with "kubectl -f".
-func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Request, path string, req commonIL.LogStruct, containerOutputPath string, containerOutput []byte) error {
+func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Request, path string, req commonIL.LogStruct, containerOutputPath string, containerOutput []byte, sessionNumber int) error {
 	// Follow until this file exist, that indicates the end of container, thus the end of following.
 	containerStatusPath := path + "/" + req.ContainerName + ".status"
 	// Get the offset of what we read.
 	containerOutputLastOffset := len(containerOutput)
-	log.G(h.Ctx).Debug("Read container " + containerStatusPath + " with current length/offset: " + strconv.Itoa(containerOutputLastOffset))
+	log.G(h.Ctx).Debug("GO routine session " + strconv.Itoa(sessionNumber) + " Read container " + containerStatusPath + " with current length/offset: " + strconv.Itoa(containerOutputLastOffset))
 
 	var containerOutputFd *os.File
 	var err error
@@ -39,17 +39,19 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				// Case the file does not exist yet, we loop until it exist.
-				log.G(h.Ctx).Debug("Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying...")
+				log.G(h.Ctx).Debug("GO routine session " + strconv.Itoa(sessionNumber) + " Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying...")
 				time.Sleep(2 * time.Second)
 				continue
 			} else {
 				// Case unknown error.
-				w.Write([]byte(err.Error() + ": could not open file to follow logs at " + containerOutputPath))
+				errWithContext := fmt.Errorf("GO routine session "+strconv.Itoa(sessionNumber)+" could not open file to follow logs at %s error type: %s error: %w", containerOutputPath, fmt.Sprintf("%#v", err), err)
+				log.G(h.Ctx).Error("GO routine session " + strconv.Itoa(sessionNumber) + " Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying...")
+				w.Write([]byte(errWithContext.Error()))
 				return err
 			}
 		}
 		// File exist.
-		log.G(h.Ctx).Debug("Opened for follow mode the container logs " + containerOutputPath)
+		log.G(h.Ctx).Debug("GO routine session " + strconv.Itoa(sessionNumber) + " Opened for follow mode the container logs " + containerOutputPath)
 		break
 	}
 	defer containerOutputFd.Close()
@@ -57,7 +59,7 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 	// We follow only from after what is already read.
 	_, err = containerOutputFd.Seek(int64(containerOutputLastOffset), 0)
 	if err != nil {
-		errWithContext := fmt.Errorf("error during Seek() of GetLogsFollowMode() in GetLogsHandler of file %s offset %d type: %s %w", containerOutputPath, containerOutputLastOffset, fmt.Sprintf("%#v", err), err)
+		errWithContext := fmt.Errorf("GO routine session "+strconv.Itoa(sessionNumber)+" error during Seek() of GetLogsFollowMode() in GetLogsHandler of file %s offset %d type: %s %w", containerOutputPath, containerOutputLastOffset, fmt.Sprintf("%#v", err), err)
 		w.Write([]byte(errWithContext.Error()))
 		return errWithContext
 	}
@@ -65,9 +67,6 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 	containerOutputReader := bufio.NewReader(containerOutputFd)
 
 	bufferBytes := make([]byte, 4096)
-
-	// For debugging purpose, when we have many kubectl logs, we can differentiate each one.
-	sessionNumber := rand.Intn(100000)
 
 	// Looping until we get end of job.
 	// TODO: handle the Ctrl+C of kubectl logs.
@@ -101,6 +100,10 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		_, err = w.Write(bufferBytes[:n])
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			log.G(h.Ctx).Error(err)
+		}
 
 		// Flush otherwise it will take time to appear in kubectl logs.
 		if f, ok := w.(http.Flusher); ok {
@@ -110,10 +113,6 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 			log.G(h.Ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.")
 		}
 
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			log.G(h.Ctx).Error(err)
-		}
 	}
 	// No error, err = nil
 	return nil
@@ -152,7 +151,10 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	defer span.End()
 	defer commonIL.SetDurationSpan(start, span)
 
-	log.G(h.Ctx).Info("Docker Sidecar: received GetLogs call")
+	// For debugging purpose, when we have many kubectl logs, we can differentiate each one.
+	sessionNumber := rand.Intn(100000)
+
+	log.G(h.Ctx).Info("GO routine session " + strconv.Itoa(sessionNumber) + " Docker Sidecar: received GetLogs call")
 	var req commonIL.LogStruct
 	statusCode := http.StatusOK
 	currentTime := time.Now()
@@ -160,14 +162,14 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		h.logErrorVerbose("Error during ReadAll() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
+		h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Error during ReadAll() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
 		return
 	}
 
 	err = json.Unmarshal(bodyBytes, &req)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		h.logErrorVerbose("Error during Unmarshal() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
+		h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Error during Unmarshal() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
 		return
 	}
 
@@ -187,10 +189,10 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	containerOutputPath := path + "/" + req.ContainerName + ".out"
 	var output []byte
 	if req.Opts.Timestamps {
-		h.logErrorVerbose("Unsupported option req.Opts.Timestamps", spanCtx, w, err)
+		h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Unsupported option req.Opts.Timestamps", spanCtx, w, err)
 		return
 	}
-	log.G(h.Ctx).Info("Reading  " + path + "/" + req.ContainerName + ".out")
+	log.G(h.Ctx).Info("GO routine session " + strconv.Itoa(sessionNumber) + " Reading  " + path + "/" + req.ContainerName + ".out")
 	containerOutput, err := h.readLogs(containerOutputPath, span, spanCtx, w)
 	if err != nil {
 		return
@@ -263,9 +265,9 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	w.Write([]byte(returnedLogs))
 
 	if req.Opts.Follow {
-		err := h.GetLogsFollowMode(w, r, path, req, containerOutputPath, containerOutput)
+		err := h.GetLogsFollowMode(w, r, path, req, containerOutputPath, containerOutput, sessionNumber)
 		if err != nil {
-			h.logErrorVerbose("Follow mode error", spanCtx, w, err)
+			h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Follow mode error", spanCtx, w, err)
 		}
 	}
 }
