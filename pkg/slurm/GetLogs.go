@@ -107,10 +107,10 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 
 		// Flush otherwise it will take time to appear in kubectl logs.
 		if f, ok := w.(http.Flusher); ok {
-			log.G(h.Ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Wrote some logs, now flushing...")
+			log.G(h.Ctx).Debug(h.logWithSessionNumber("wrote some logs, now flushing...", sessionNumber))
 			f.Flush()
 		} else {
-			log.G(h.Ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.")
+			log.G(h.Ctx).Debug(h.logWithSessionNumber("wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.", sessionNumber))
 		}
 
 	}
@@ -125,19 +125,8 @@ func (h *SidecarHandler) logErrorVerbose(context string, ctx context.Context, w 
 	h.handleError(ctx, w, statusCode, errWithContext)
 }
 
-func (h *SidecarHandler) readLogs(logsPath string, span trace.Span, ctx context.Context, w http.ResponseWriter) ([]byte, error) {
-	output, err := os.ReadFile(logsPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			// Case file does not exist yet. This is normal, returning empty array.
-			output = make([]byte, 0)
-		} else {
-			span.AddEvent("Error retrieving logs")
-			h.logErrorVerbose("Error during ReadFile() of readLogs() in GetLogsHandler of file "+logsPath, ctx, w, err)
-			return nil, err
-		}
-	}
-	return output, nil
+func (h *SidecarHandler) logWithSessionNumber(logText string, sessionNumber int) string {
+	return "GO routine session " + strconv.Itoa(sessionNumber) + ": " + logText
 }
 
 // GetLogsHandler reads Jobs' output file to return what's logged inside.
@@ -154,7 +143,7 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	// For debugging purpose, when we have many kubectl logs, we can differentiate each one.
 	sessionNumber := rand.Intn(100000)
 
-	log.G(h.Ctx).Info("GO routine session " + strconv.Itoa(sessionNumber) + " Docker Sidecar: received GetLogs call")
+	log.G(h.Ctx).Info(h.logWithSessionNumber(" Docker Sidecar: received GetLogs call", sessionNumber))
 	var req commonIL.LogStruct
 	statusCode := http.StatusOK
 	currentTime := time.Now()
@@ -162,14 +151,14 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Error during ReadAll() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
+		h.logErrorVerbose(h.logWithSessionNumber("error during ReadAll() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), sessionNumber), spanCtx, w, err)
 		return
 	}
 
 	err = json.Unmarshal(bodyBytes, &req)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Error during Unmarshal() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
+		h.logErrorVerbose(h.logWithSessionNumber("error during Unmarshal() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), sessionNumber), spanCtx, w, err)
 		return
 	}
 
@@ -189,16 +178,18 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	containerOutputPath := path + "/" + req.ContainerName + ".out"
 	var output []byte
 	if req.Opts.Timestamps {
-		h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Unsupported option req.Opts.Timestamps", spanCtx, w, err)
+		h.logErrorVerbose(h.logWithSessionNumber("unsupported option req.Opts.Timestamps", sessionNumber), spanCtx, w, err)
 		return
 	}
-	log.G(h.Ctx).Info("GO routine session " + strconv.Itoa(sessionNumber) + " Reading  " + path + "/" + req.ContainerName + ".out")
-	containerOutput, err := h.readLogs(containerOutputPath, span, spanCtx, w)
+	log.G(h.Ctx).Info(h.logWithSessionNumber("reading  "+path+"/"+req.ContainerName+".out", sessionNumber))
+	containerOutput, err := h.waitAndReadLogs(containerOutputPath, span, spanCtx, w, sessionNumber)
 	if err != nil {
+		// Error already handled in waitAndReadLogs
 		return
 	}
-	jobOutput, err := h.readLogs(path+"/"+"job.out", span, spanCtx, w)
+	jobOutput, err := h.waitAndReadLogs(path+"/"+"job.out", span, spanCtx, w, sessionNumber)
 	if err != nil {
+		// Error already handled in waitAndReadLogs
 		return
 	}
 
@@ -267,7 +258,34 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	if req.Opts.Follow {
 		err := h.GetLogsFollowMode(w, r, path, req, containerOutputPath, containerOutput, sessionNumber)
 		if err != nil {
-			h.logErrorVerbose("GO routine session "+strconv.Itoa(sessionNumber)+" Follow mode error", spanCtx, w, err)
+			h.logErrorVerbose(h.logWithSessionNumber("follow mode error", sessionNumber), spanCtx, w, err)
 		}
 	}
+}
+
+// Goal: wait that the file exist then reads it.
+// Important to wait because if we don't wait and return empty array, it will generates a JSON unmarshall error in InterLink VK.
+// Fail for any error not related to file not existing (eg: permission error will raise an error).
+// Already handle error.
+func (h *SidecarHandler) waitAndReadLogs(logsPath string, span trace.Span, ctx context.Context, w http.ResponseWriter, sessionNumber int) ([]byte, error) {
+	var output []byte
+	for {
+		var err error
+		output, err = os.ReadFile(logsPath)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				log.G(h.Ctx).Info(h.logWithSessionNumber("file "+logsPath+" not found, sleep 2s then retry opening...", sessionNumber))
+				// Case file does not exist yet.
+				time.Sleep(2 * time.Second)
+				continue
+			} else {
+				span.AddEvent("Error retrieving logs")
+				h.logErrorVerbose(h.logWithSessionNumber("error during ReadFile() of readLogs() in GetLogsHandler of file "+logsPath, sessionNumber), ctx, w, err)
+				return nil, err
+			}
+		}
+		log.G(h.Ctx).Info(h.logWithSessionNumber("file "+logsPath+" found and could be read!", sessionNumber))
+		break
+	}
+	return output, nil
 }
