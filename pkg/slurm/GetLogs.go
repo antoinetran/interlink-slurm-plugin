@@ -160,6 +160,7 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	statusCode := http.StatusOK
 	currentTime := time.Now()
 
+	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading request body")
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
@@ -167,6 +168,7 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "convert request body to json")
 	err = json.Unmarshal(bodyBytes, &req)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
