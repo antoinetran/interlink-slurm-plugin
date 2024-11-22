@@ -267,8 +267,9 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	commonIL.SetDurationSpan(start, span, commonIL.WithHTTPReturnCode(statusCode))
 
 	if req.Opts.Follow {
-		// Important: the set header of HTTP streaming MUST be done before WriteHeader!!!
-		// Case continuous following logs, thus HTTP stream!! Otherwise the TCP connection will break as soon as the request is done.
+		// Warning, these headers are not sent until a WriteHeader(), that should happen hopefully before the default HTTP request timeout of 30s.
+		// If the headers are not sent before 30s, the connection will break.
+		// Also response headers should be sent before WriteHeader, because if after, they are ignored.
 		w.Header().Set("Connection", "Keep-Alive")
 		w.Header().Set("Transfer-Encoding", "chunked")
 	}
