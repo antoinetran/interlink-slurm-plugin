@@ -195,13 +195,13 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"unsupported option req.Opts.Timestamps", spanCtx, w, err)
 		return
 	}
-	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "reading  " + path + "/" + req.ContainerName + ".out")
-	containerOutput, err := h.waitAndReadLogs(containerOutputPath, span, spanCtx, w, sessionNumber)
+	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "reading " + path + "/" + req.ContainerName + ".out")
+	containerOutput, err := h.ReadLogs(containerOutputPath, span, spanCtx, w, sessionNumber)
 	if err != nil {
 		// Error already handled in waitAndReadLogs
 		return
 	}
-	jobOutput, err := h.waitAndReadLogs(path+"/"+"job.out", span, spanCtx, w, sessionNumber)
+	jobOutput, err := h.ReadLogs(path+"/"+"job.out", span, spanCtx, w, sessionNumber)
 	if err != nil {
 		// Error already handled in waitAndReadLogs
 		return
@@ -285,29 +285,24 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// Goal: wait that the file exist then reads it.
+// Goal: read the file if it exist. If not, return empty.
 // Important to wait because if we don't wait and return empty array, it will generates a JSON unmarshall error in InterLink VK.
 // Fail for any error not related to file not existing (eg: permission error will raise an error).
 // Already handle error.
-func (h *SidecarHandler) waitAndReadLogs(logsPath string, span trace.Span, ctx context.Context, w http.ResponseWriter, sessionNumber int) ([]byte, error) {
+func (h *SidecarHandler) ReadLogs(logsPath string, span trace.Span, ctx context.Context, w http.ResponseWriter, sessionNumber int) ([]byte, error) {
 	var output []byte
-	for {
-		var err error
-		output, err = os.ReadFile(logsPath)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "file " + logsPath + " not found, sleep 2s then retry opening...")
-				// Case file does not exist yet.
-				time.Sleep(2 * time.Second)
-				continue
-			} else {
-				span.AddEvent("Error retrieving logs")
-				h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"error during ReadFile() of readLogs() in GetLogsHandler of file "+logsPath, ctx, w, err)
-				return nil, err
-			}
+	var err error
+	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "reading file " + logsPath)
+	output, err = os.ReadFile(logsPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "file " + logsPath + " not found.")
+			output = make([]byte, 0, 0)
+		} else {
+			span.AddEvent("Error retrieving logs")
+			h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"error during ReadFile() of readLogs() in GetLogsHandler of file "+logsPath, ctx, w, err)
+			return nil, err
 		}
-		log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "file " + logsPath + " found and could be read!")
-		break
 	}
 	return output, nil
 }
