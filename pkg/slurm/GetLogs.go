@@ -195,7 +195,6 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"unsupported option req.Opts.Timestamps", spanCtx, w, err)
 		return
 	}
-	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "reading " + path + "/" + req.ContainerName + ".out")
 	containerOutput, err := h.ReadLogs(containerOutputPath, span, spanCtx, w, sessionNumber)
 	if err != nil {
 		// Error already handled in waitAndReadLogs
@@ -267,6 +266,7 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	commonIL.SetDurationSpan(start, span, commonIL.WithHTTPReturnCode(statusCode))
 
 	if req.Opts.Follow {
+		log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "follow logs mode: setting HTTP response headers for HTTP streaming")
 		// Warning, these headers are not sent until a WriteHeader(), that should happen hopefully before the default HTTP request timeout of 30s.
 		// If the headers are not sent before 30s, the connection will break.
 		// Also response headers should be sent before WriteHeader, because if after, they are ignored.
@@ -274,7 +274,10 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("Transfer-Encoding", "chunked")
 	}
 
+	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response headers and OK status")
 	w.WriteHeader(statusCode)
+
+	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response body len: " + strconv.Itoa(len(returnedLogs)))
 	w.Write([]byte(returnedLogs))
 
 	if req.Opts.Follow {
