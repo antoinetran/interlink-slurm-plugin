@@ -271,7 +271,9 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		// If the headers are not sent before 30s, the connection will break.
 		// Also response headers should be sent before WriteHeader, because if after, they are ignored.
 		w.Header().Set("Connection", "Keep-Alive")
+		w.Header().Set("Keep-Alive", "timeout=40")
 		w.Header().Set("Transfer-Encoding", "chunked")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 	}
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response headers and OK status")
