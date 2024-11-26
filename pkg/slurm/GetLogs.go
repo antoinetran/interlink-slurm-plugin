@@ -102,6 +102,7 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			log.G(h.Ctx).Error(err)
+			return err
 		}
 
 		// Flush otherwise it will take time to appear in kubectl logs.
