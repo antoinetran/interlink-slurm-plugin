@@ -29,7 +29,7 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 	containerStatusPath := path + "/" + req.ContainerName + ".status"
 	// Get the offset of what we read.
 	containerOutputLastOffset := len(containerOutput)
-	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Read container " + containerStatusPath + " with current length/offset: " + strconv.Itoa(containerOutputLastOffset))
+	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Check container status" + containerStatusPath + " with current length/offset: " + strconv.Itoa(containerOutputLastOffset))
 
 	var containerOutputFd *os.File
 	var err error
@@ -40,9 +40,9 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 				// Case the file does not exist yet, we loop until it exist.
 				notFoundMsg := GetSessionNumberMessage(sessionNumber) + "Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying..."
 				log.G(h.Ctx).Debug(notFoundMsg)
-				// Warning: if we don't write anything to body before 30s, there will be a timeout.
+				// Warning: if we don't write anything to body before 30s, there will be a timeout in VK to API DoReq(), thus we send an informational message that the log is not ready.
 				w.Write([]byte(notFoundMsg))
-				// Flush otherwise it will take time to appear in kubectl logs.
+				// Flush otherwise it will be as if nothing was written.
 				if f, ok := w.(http.Flusher); ok {
 					log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "wrote file not found, now flushing...")
 					f.Flush()
