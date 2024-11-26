@@ -42,6 +42,13 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 				log.G(h.Ctx).Debug(notFoundMsg)
 				// Warning: if we don't write anything to body before 30s, there will be a timeout.
 				w.Write([]byte(notFoundMsg))
+				// Flush otherwise it will take time to appear in kubectl logs.
+				if f, ok := w.(http.Flusher); ok {
+					log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "wrote file not found, now flushing...")
+					f.Flush()
+				} else {
+					log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "wrote file not found but could not flush because server does not support Flusher.")
+				}
 				time.Sleep(5 * time.Second)
 				continue
 			} else {
