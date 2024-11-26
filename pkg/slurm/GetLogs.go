@@ -47,7 +47,7 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 					log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "wrote file not found, now flushing...")
 					f.Flush()
 				} else {
-					log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "wrote file not found but could not flush because server does not support Flusher.")
+					log.G(h.Ctx).Error(GetSessionNumberMessage(sessionNumber) + "wrote file not found but could not flush because server does not support Flusher.")
 				}
 				time.Sleep(5 * time.Second)
 				continue
@@ -294,6 +294,14 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response body len: " + strconv.Itoa(len(returnedLogs)))
 	w.Write([]byte(returnedLogs))
+	// Flush or else, it could be lost in the pipe.
+	if f, ok := w.(http.Flusher); ok {
+		log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote response body, now flushing...")
+		f.Flush()
+	} else {
+		log.G(h.Ctx).Error(GetSessionNumberMessage(sessionNumber) + "Wrote response body but could not flush because server does not support Flusher.")
+		return
+	}
 
 	if req.Opts.Follow {
 		err := h.GetLogsFollowMode(w, r, path, req, containerOutputPath, containerOutput, sessionNumber)
