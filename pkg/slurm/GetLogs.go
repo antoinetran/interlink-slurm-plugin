@@ -38,13 +38,16 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				// Case the file does not exist yet, we loop until it exist.
-				log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying...")
-				time.Sleep(2 * time.Second)
+				notFoundMsg := GetSessionNumberMessage(sessionNumber) + "Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying..."
+				log.G(h.Ctx).Debug(notFoundMsg)
+				// Warning: if we don't write anything to body before 30s, there will be a timeout.
+				w.Write([]byte(notFoundMsg))
+				time.Sleep(5 * time.Second)
 				continue
 			} else {
 				// Case unknown error.
 				errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"could not open file to follow logs at %s error type: %s error: %w", containerOutputPath, fmt.Sprintf("%#v", err), err)
-				log.G(h.Ctx).Error(GetSessionNumberMessage(sessionNumber) + "Cannot open in follow mode the container logs " + containerOutputPath + " because it does not exist yet, sleeping before retrying...")
+				log.G(h.Ctx).Error(errWithContext)
 				w.Write([]byte(errWithContext.Error()))
 				return err
 			}
