@@ -270,14 +270,16 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	commonIL.SetDurationSpan(start, span, commonIL.WithHTTPReturnCode(statusCode))
 
 	if req.Opts.Follow {
-		log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "follow logs mode: setting HTTP response headers for HTTP streaming")
-		// Warning, these headers are not sent until a WriteHeader(), that should happen hopefully before the default HTTP request timeout of 30s.
-		// If the headers are not sent before 30s, the connection will break.
-		// Also response headers should be sent before WriteHeader, because if after, they are ignored.
-		w.Header().Set("Connection", "Keep-Alive")
-		w.Header().Set("Keep-Alive", "timeout=40")
-		w.Header().Set("Transfer-Encoding", "chunked")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
+		/*
+			log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "follow logs mode: setting HTTP response headers for HTTP streaming")
+			// Warning, these headers are not sent until a WriteHeader(), that should happen hopefully before the default HTTP request timeout of 30s.
+			// If the headers are not sent before 30s, the connection will break.
+			// Also response headers should be sent before WriteHeader, because if after, they are ignored.
+			w.Header().Set("Connection", "Keep-Alive")
+			w.Header().Set("Keep-Alive", "timeout=40")
+			w.Header().Set("Transfer-Encoding", "chunked")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+		*/
 	}
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response headers and OK status")
