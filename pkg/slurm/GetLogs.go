@@ -168,22 +168,19 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "Docker Sidecar: received GetLogs call")
 	var req commonIL.LogStruct
-	statusCode := http.StatusOK
 	currentTime := time.Now()
 
 	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading request body")
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
-		statusCode = http.StatusInternalServerError
-		h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"error during ReadAll() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
+		h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"error during ReadAll() in GetLogsHandler request body", spanCtx, w, err)
 		return
 	}
 
 	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "convert request body to json")
 	err = json.Unmarshal(bodyBytes, &req)
 	if err != nil {
-		statusCode = http.StatusInternalServerError
-		h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"error during Unmarshal() in GetLogsHandler request body, status code "+strconv.Itoa(statusCode), spanCtx, w, err)
+		h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"error during Unmarshal() in GetLogsHandler request body", spanCtx, w, err)
 		return
 	}
 
@@ -274,7 +271,7 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	commonIL.SetDurationSpan(start, span, commonIL.WithHTTPReturnCode(statusCode))
+	commonIL.SetDurationSpan(start, span, commonIL.WithHTTPReturnCode(http.StatusOK))
 
 	if req.Opts.Follow {
 		/*
@@ -289,14 +286,23 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		*/
 	}
 
-	// This disables Content-Length in response header, which allows both short and long HTTP (for logs in follow mode).
 	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Content-Type", "text/plain")
+
+	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Response header to write: ")
+	log.G(h.Ctx).Debug(w.Header)
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response headers and OK status")
-	w.WriteHeader(statusCode)
+	w.WriteHeader(http.StatusOK)
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response body len: " + strconv.Itoa(len(returnedLogs)))
-	w.Write([]byte(returnedLogs))
+	//w.Write([]byte(returnedLogs))
+	n, err := fmt.Fprint(w, returnedLogs)
+	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "written response body len: " + strconv.Itoa(n))
+	if err != nil {
+		h.logErrorVerbose(GetSessionNumberMessage(sessionNumber)+"error during Fprint() in GetLogsHandler", spanCtx, w, err)
+		return
+	}
 
 	// Flush or else, it could be lost in the pipe.
 	if f, ok := w.(http.Flusher); ok {
