@@ -289,11 +289,14 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 		*/
 	}
 
-	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response body len: " + strconv.Itoa(len(returnedLogs)))
-	w.Write([]byte(returnedLogs))
+	// This disables Content-Length in response header, which allows both short and long HTTP (for logs in follow mode).
+	w.Header().Set("Transfer-Encoding", "chunked")
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response headers and OK status")
 	w.WriteHeader(statusCode)
+
+	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response body len: " + strconv.Itoa(len(returnedLogs)))
+	w.Write([]byte(returnedLogs))
 
 	// Flush or else, it could be lost in the pipe.
 	if f, ok := w.(http.Flusher); ok {
