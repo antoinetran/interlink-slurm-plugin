@@ -44,7 +44,7 @@ func (h *SidecarHandler) GetLogsFollowMode(w http.ResponseWriter, r *http.Reques
 				w.Write([]byte(notFoundMsg))
 				// Flush otherwise it will be as if nothing was written.
 				if f, ok := w.(http.Flusher); ok {
-					log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "wrote file not found, now flushing...")
+					log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "wrote file not found yet, now flushing this message...")
 					f.Flush()
 				} else {
 					log.G(h.Ctx).Error(GetSessionNumberMessage(sessionNumber) + "wrote file not found but could not flush because server does not support Flusher.")
@@ -290,7 +290,7 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "text/plain")
 
 	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Response header to write: ")
-	log.G(h.Ctx).Debug(w.Header)
+	log.G(h.Ctx).Debug(w.Header())
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "writing response headers and OK status")
 	w.WriteHeader(http.StatusOK)
