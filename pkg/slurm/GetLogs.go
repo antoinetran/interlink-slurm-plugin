@@ -296,7 +296,7 @@ func (h *SidecarHandler) ReadLogs(logsPath string, span trace.Span, ctx context.
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			log.G(h.Ctx).Info(sessionContextMessage, "file ", logsPath, " not found.")
-			output = make([]byte, 0, 0)
+			output = make([]byte, 0)
 		} else {
 			span.AddEvent("Error retrieving logs")
 			h.logErrorVerbose(sessionContextMessage+"error during ReadFile() of readLogs() in GetLogsHandler of file "+logsPath, ctx, w, err)
