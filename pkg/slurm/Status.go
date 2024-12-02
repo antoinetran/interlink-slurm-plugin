@@ -83,7 +83,7 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 				// Eg of output: "R 0"
 				// With test, exit_code is better than DerivedEC, because for canceled jobs, it gives 15 while DerivedEC gives 0.
 				// states=all or else some jobs are hidden, then it is impossible to get job exit code.
-				cmd := []string{"--noheader", "-a", "--states=all", "-O", "StateCompact,exit_code", "-j ", (*h.JIDs)[uid].JID}
+				cmd := []string{"--noheader", "-a", "--states=all", "-O", "exit_code,StateCompact", "-j ", (*h.JIDs)[uid].JID}
 				shell := exec.ExecTask{
 					Command: h.Config.Squeuepath,
 					Args:    cmd,
@@ -147,7 +147,7 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 
 					// Magic REGEX that matches any number from 0 to 255 included. Eg: match 2, 255, does not match 256, 02, -1.
 					// If the job is not in terminal state, the exit code has no meaning, however squeue returns 0 for exit code in this case. Just ignore the value.
-					exitCodePattern := `\s([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$`
+					exitCodePattern := `([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\s`
 					exitCodeRe := regexp.MustCompile(exitCodePattern)
 					exitCodeMatch := exitCodeRe.FindString(execReturn.Stdout)
 
