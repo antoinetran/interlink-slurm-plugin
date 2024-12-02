@@ -145,11 +145,16 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 					stateRe := regexp.MustCompile(statePattern)
 					stateMatch := stateRe.FindString(execReturn.Stdout)
 
-					// Magic REGEX that matches any number from 0 to 255 included. Eg: match 2, 255, does not match 256, 02, -1.
 					// If the job is not in terminal state, the exit code has no meaning, however squeue returns 0 for exit code in this case. Just ignore the value.
+					// Magic REGEX that matches any number from 0 to 255 included. Eg: match 2, 255, does not match 256, 02, -1.
+					// Adds whitespace because otherwise it will take too few letter. Eg: for "123", it will take only "1". With \s, it will take "123 ".
+					// Then we only keep the number part, not the last space.
 					exitCodePattern := `([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\s`
 					exitCodeRe := regexp.MustCompile(exitCodePattern)
-					exitCodeMatch := exitCodeRe.FindString(execReturn.Stdout)
+					// Eg: exitCodeMatchSlice = "123 "
+					exitCodeMatchSlice := exitCodeRe.FindStringSubmatch(execReturn.Stdout)
+					// Only keep the number part. Eg: exitCodeMatch = "123"
+					exitCodeMatch := exitCodeMatchSlice[1]
 
 					//log.G(h.Ctx).Info("JID: " + (*h.JIDs)[uid].JID + " | Status: " + stateMatch + " | Pod: " + pod.Name + " | UID: " + string(pod.UID))
 					log.G(h.Ctx).Infof("%sJID: %s | Status: %s | Job exit code (if applicable): %s | Pod: %s | UID: %s", sessionContextMessage, (*h.JIDs)[uid].JID, stateMatch, exitCodeMatch, pod.Name, string(pod.UID))

@@ -651,12 +651,14 @@ func deleteContainer(Ctx context.Context, config SlurmConfig, podUID string, JID
 
 	if err != nil {
 		log.G(Ctx).Error(err)
-		span.AddEvent("Failed to delete SLURM Job " + (*JIDs)[podUID].JID + " for Pod " + podUID)
+		span.AddEvent("Failed to delete SLURM Job " + jid + " for Pod " + podUID)
 	} else {
 		span.AddEvent("SLURM Job " + jid + " for Pod " + podUID + " successfully deleted")
 	}
 
-	return err
+	// We ignore the deletion error becauase it is already logged, and because InterLink can still be opening files (eg logs in follow mode).
+	// Once InterLink will not use files, all files will be deleted then.
+	return nil
 }
 
 // mountData is called by prepareMounts and creates files and directory according to their definition in the pod structure.
