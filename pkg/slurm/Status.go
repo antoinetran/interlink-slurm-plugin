@@ -70,7 +70,7 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 
 		if execReturn.Stderr != "" {
 			statusCode = http.StatusInternalServerError
-			h.handleError(spanCtx, w, statusCode, errors.New("unable to retrieve job status: "+execReturn.Stderr))
+			h.handleError(spanCtx, w, statusCode, errors.New(sessionContextMessage+"unable to retrieve job status: "+execReturn.Stderr))
 			return
 		}
 
@@ -97,13 +97,13 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 
 				if execReturn.Stderr != "" {
 					span.AddEvent("squeue returned error " + execReturn.Stderr + " for Job " + (*h.JIDs)[uid].JID + ".\nGetting status from files")
-					log.G(h.Ctx).Error("ERR: ", execReturn.Stderr)
+					log.G(h.Ctx).Error(sessionContextMessage, "ERR: ", execReturn.Stderr)
 					for _, ct := range pod.Spec.Containers {
-						log.G(h.Ctx).Info("Getting exit status from  " + path + "/" + ct.Name + ".status")
+						log.G(h.Ctx).Info(sessionContextMessage, "getting exit status from  "+path+"/"+ct.Name+".status")
 						file, err := os.Open(path + "/" + ct.Name + ".status")
 						if err != nil {
 							statusCode = http.StatusInternalServerError
-							h.handleError(spanCtx, w, statusCode, fmt.Errorf("unable to retrieve container status: %s", err))
+							h.handleError(spanCtx, w, statusCode, fmt.Errorf(sessionContextMessage+"unable to retrieve container status: %s", err))
 							log.G(h.Ctx).Error()
 							return
 						}
@@ -111,7 +111,7 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 						statusb, err := io.ReadAll(file)
 						if err != nil {
 							statusCode = http.StatusInternalServerError
-							h.handleError(spanCtx, w, statusCode, fmt.Errorf("unable to read container status: %s", err))
+							h.handleError(spanCtx, w, statusCode, fmt.Errorf(sessionContextMessage+"unable to read container status: %s", err))
 							log.G(h.Ctx).Error()
 							return
 						}
@@ -119,7 +119,7 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 						status, err := strconv.Atoi(strings.Replace(string(statusb), "\n", "", -1))
 						if err != nil {
 							statusCode = http.StatusInternalServerError
-							h.handleError(spanCtx, w, statusCode, fmt.Errorf("unable to convert container status: %s", err))
+							h.handleError(spanCtx, w, statusCode, fmt.Errorf(sessionContextMessage+"unable to convert container status: %s", err))
 							log.G(h.Ctx).Error()
 							status = 500
 						}
@@ -152,7 +152,7 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 					exitCodeMatch := exitCodeRe.FindString(execReturn.Stdout)
 
 					//log.G(h.Ctx).Info("JID: " + (*h.JIDs)[uid].JID + " | Status: " + stateMatch + " | Pod: " + pod.Name + " | UID: " + string(pod.UID))
-					log.G(h.Ctx).Infof("JID: %s | Status: %s | Job exit code (if applicable): %s | Pod: %s | UID: %s", (*h.JIDs)[uid].JID, stateMatch, exitCodeMatch, pod.Name, string(pod.UID))
+					log.G(h.Ctx).Infof("%sJID: %s | Status: %s | Job exit code (if applicable): %s | Pod: %s | UID: %s", sessionContextMessage, (*h.JIDs)[uid].JID, stateMatch, exitCodeMatch, pod.Name, string(pod.UID))
 
 					switch stateMatch {
 					case "CD":
@@ -318,7 +318,7 @@ func (h *SidecarHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		cachedStatus = resp
 		timer = time.Now()
 	} else {
-		log.G(h.Ctx).Debug("Cached status")
+		log.G(h.Ctx).Debug(sessionContextMessage, "Cached status")
 		resp = cachedStatus
 	}
 
