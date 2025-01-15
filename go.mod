@@ -4,7 +4,7 @@ go 1.22
 
 toolchain go1.22.4
 
-#replace github.com/intertwin-eu/interlink => C:\Users\trana\Custom\data\git\interlink
+//replace github.com/intertwin-eu/interlink => C:\Users\trana\Custom\data\git\interlink
 
 require (
 	al.essio.dev/pkg/shellescape v1.5.0
