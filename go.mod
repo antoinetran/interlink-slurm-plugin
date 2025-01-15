@@ -11,7 +11,7 @@ require (
 	github.com/alexellis/go-execute v0.6.0
 	github.com/containerd/containerd v1.7.6
 	github.com/google/uuid v1.6.0
-	github.com/antoinetran/interlink v0.3.6-patchI45V001
+	github.com/antoinetran/interlink 0.3.6-patchI45V001
 	github.com/sirupsen/logrus v1.9.3
 	github.com/virtual-kubelet/virtual-kubelet v1.11.0
 	go.opentelemetry.io/otel v1.27.0
