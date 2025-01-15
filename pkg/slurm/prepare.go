@@ -328,7 +328,14 @@ func getRetrievedProjectedVolumeMap(retrievedContainer commonIL.RetrievedContain
 			return retrievedProjectedVolumeMap, nil
 		}
 	}
-	return emptyResult, fmt.Errorf("could not find projectedVolumeMap %s in container %s in pod %s", projectedVolumeMapName, containerName, podName)
+
+	// This should not happen. Error case: building context for error log.
+	var retrievedProjectedVolumeMapKeys []string
+	for _, retrievedProjectedVolumeMap := range retrievedContainer.ProjectedVolumeMaps {
+		retrievedProjectedVolumeMapKeys = append(retrievedProjectedVolumeMapKeys, retrievedProjectedVolumeMap.Name)
+	}
+	return emptyResult, fmt.Errorf("could not find projectedVolumeMap %s in container %s in pod %s current projectedVolumeMaps keys %s",
+		projectedVolumeMapName, containerName, podName, strings.Join(retrievedProjectedVolumeMapKeys, ","))
 }
 
 func getRetrievedSecret(retrievedContainer commonIL.RetrievedContainer, secretName string, containerName string, podName string) (v1.Secret, error) {
