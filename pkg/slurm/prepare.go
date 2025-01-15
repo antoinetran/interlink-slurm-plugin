@@ -818,7 +818,7 @@ func mountDataSimpleVolume(
 
 	if os.Getenv("SHARED_FS") == "true" {
 		log.G(Ctx).Info("--- Shared FS enabled, files will be directly created before the job submission")
-		err := os.MkdirAll(podVolumeDir, os.ModeDir)
+		err := os.MkdirAll(podVolumeDir, os.FileMode(0755)|os.ModeDir)
 		if err != nil {
 			return []string{}, nil, fmt.Errorf("could not create whole directory of %s root cause %w", podVolumeDir, err)
 		}
@@ -921,7 +921,7 @@ func mountData(Ctx context.Context, config SlurmConfig, container v1.Container, 
 				var edPath string
 				edPath = filepath.Join(path, "emptyDirs", volume.Name)
 				log.G(Ctx).Info("-- Creating EmptyDir in ", edPath)
-				err := os.MkdirAll(edPath, os.ModeDir)
+				err := os.MkdirAll(edPath, os.FileMode(0755)|os.ModeDir)
 				if err != nil {
 					return []string{}, nil, fmt.Errorf("could not create whole directory of %s root cause %w", edPath, err)
 				}
