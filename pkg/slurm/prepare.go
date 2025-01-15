@@ -262,6 +262,95 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 	return envs
 }
 
+func prepareMountsSimpleVolume(
+	Ctx context.Context,
+	config SlurmConfig,
+	container v1.Container,
+	workingPath string,
+	volumeObject interface{},
+	volumeMount v1.VolumeMount,
+	volume v1.Volume,
+	mountedDataSB strings.Builder,
+) error {
+	volumesHostToContainerPaths, envVarNames, err := mountData(Ctx, config, container, volumeObject, volumeMount, volume, workingPath)
+	if err != nil {
+		log.G(Ctx).Error(err)
+		return err
+	}
+
+	log.G(Ctx).Debug("volumesHostToContainerPaths: ", volumesHostToContainerPaths)
+
+	for filePathIndex, volumesHostToContainerPath := range volumesHostToContainerPaths {
+		if os.Getenv("SHARED_FS") != "true" {
+			filePathSplitted := strings.Split(volumesHostToContainerPath, ":")
+			hostFilePath := filePathSplitted[0]
+			hostFilePathSplitted := strings.Split(hostFilePath, "/")
+			hostParentDir := filepath.Join(hostFilePathSplitted[:len(hostFilePathSplitted)-1]...)
+
+			// Creates parent dir of the file, then create empty file.
+			prefix += "\nmkdir -p \"" + hostParentDir + "\" && touch " + hostFilePath
+
+			// Puts content of the file thanks to env var. Note: the envVarNames has the same number and order that volumesHostToContainerPaths.
+			envVarName := envVarNames[filePathIndex]
+			splittedEnvName := strings.Split(envVarName, "_")
+			log.G(Ctx).Info(splittedEnvName[len(splittedEnvName)-1])
+			prefix += "\necho \"${" + envVarName + "}\" > \"" + hostFilePath + "\""
+		}
+		mountedDataSB.WriteString(" --bind ")
+		mountedDataSB.WriteString(volumesHostToContainerPath)
+	}
+	return nil
+}
+func getRetrievedContainer(podData commonIL.RetrievedPodData, containerName string) (commonIL.RetrievedContainer, error) {
+	for _, container := range podData.Containers {
+		if container.Name == containerName {
+			return container, nil
+		}
+	}
+	var emptyResult commonIL.RetrievedContainer
+	return emptyResult, fmt.Errorf("could not find retrieved container for %s in pod %s", containerName, podData.Pod.Name)
+}
+
+func getRetrievedConfigMap(retrievedContainer commonIL.RetrievedContainer, configMapName string, containerName string, podName string) (v1.ConfigMap, error) {
+	var emptyResult v1.ConfigMap
+	for _, configMap := range retrievedContainer.ConfigMaps {
+		if configMap.Name == configMapName {
+			return configMap, nil
+		}
+	}
+	return emptyResult, fmt.Errorf("could not find configMap %s in container %s in pod %s", configMapName, containerName, podName)
+}
+
+func getRetrievedProjectedVolumeMap(retrievedContainer commonIL.RetrievedContainer, projectedVolumeMapName string, containerName string, podName string) (v1.ConfigMap, error) {
+	var emptyResult v1.ConfigMap
+	for _, retrievedProjectedVolumeMap := range retrievedContainer.ProjectedVolumeMaps {
+		if retrievedProjectedVolumeMap.Name == projectedVolumeMapName {
+			return retrievedProjectedVolumeMap, nil
+		}
+	}
+	return emptyResult, fmt.Errorf("could not find projectedVolumeMap %s in container %s in pod %s", projectedVolumeMapName, containerName, podName)
+}
+
+func getRetrievedSecret(retrievedContainer commonIL.RetrievedContainer, secretName string, containerName string, podName string) (v1.Secret, error) {
+	var emptyResult v1.Secret
+	for _, retrievedSecret := range retrievedContainer.Secrets {
+		if retrievedSecret.Name == secretName {
+			return retrievedSecret, nil
+		}
+	}
+	return emptyResult, fmt.Errorf("could not find secret %s in container %s in pod %s", secretName, containerName, podName)
+}
+
+func getPodVolume(pod v1.Pod, volumeName string) (v1.Volume, error) {
+	for _, vol := range pod.Spec.Volumes {
+		if vol.Name == volumeName {
+			return vol, nil
+		}
+	}
+	var emptyResult v1.Volume
+	return emptyResult, fmt.Errorf("could not find volume %s in pod %s", volumeName, pod.Name)
+}
+
 // prepareMounts iterates along the struct provided in the data parameter and checks for ConfigMaps, Secrets and EmptyDirs to be mounted.
 // For each element found, the mountData function is called.
 // In this context, the general case is given by host and container not sharing the file system, so data are stored within ENVS with matching names.
@@ -280,80 +369,85 @@ func prepareMounts(
 	log.G(Ctx).Info(span)
 	span.AddEvent("Preparing Mounts for container " + container.Name)
 
-	log.G(Ctx).Info("-- Preparing mountpoints for " + container.Name)
-	mountedData := ""
+	log.G(Ctx).Info("-- Preparing mountpoints for ", container.Name)
+	var mountedDataSB strings.Builder
 
 	err := os.MkdirAll(workingPath, os.ModePerm)
 	if err != nil {
 		log.G(Ctx).Error(err)
 		return "", err
-	} else {
-		log.G(Ctx).Info("-- Created directory " + workingPath)
 	}
+	log.G(Ctx).Info("-- Created directory ", workingPath)
+	podName := podData.Pod.Name
 
-	for _, cont := range podData.Containers {
-		for _, cfgMap := range cont.ConfigMaps {
-			if container.Name == cont.Name {
-				configMapPath, env, err := mountData(Ctx, config, podData.Pod, container, cfgMap, workingPath)
-				if err != nil {
-					log.G(Ctx).Error(err)
-					return "", err
-				}
-
-				log.G(Ctx).Debug(configMapPath)
-
-				for _, cfgMapPath := range configMapPath {
-					if os.Getenv("SHARED_FS") != "true" {
-						dirs := strings.Split(cfgMapPath, ":")
-						splitDirs := strings.Split(dirs[0], "/")
-						dir := filepath.Join(splitDirs[:len(splitDirs)-1]...)
-						prefix += "\nmkdir -p " + dir + " && touch " + dirs[0] + " && echo $" + env + " > " + dirs[0]
-					}
-					mountedData += " --bind " + cfgMapPath
-				}
-			}
-		}
-
-		for _, secret := range cont.Secrets {
-			if container.Name == cont.Name {
-				secretPath, env, err := mountData(Ctx, config, podData.Pod, container, secret, workingPath)
-				if err != nil {
-					log.G(Ctx).Error(err)
-					return "", err
-				}
-
-				log.G(Ctx).Debug(secretPath)
-
-				for _, scrtPath := range secretPath {
-					if os.Getenv("SHARED_FS") != "true" {
-						dirs := strings.Split(scrtPath, ":")
-						splitDirs := strings.Split(dirs[0], "/")
-						dir := filepath.Join(splitDirs[:len(splitDirs)-1]...)
-						splittedEnv := strings.Split(env, "_")
-						log.G(Ctx).Info(splittedEnv[len(splittedEnv)-1])
-						prefix += "\nmkdir -p " + dir + " && touch " + dirs[0] + " && echo $" + env + " > " + dirs[0]
-					}
-					mountedData += " --bind " + scrtPath
-				}
-			}
-		}
-
-		if container.Name == cont.Name {
-			edPath, _, err := mountData(Ctx, config, podData.Pod, container, "emptyDir", workingPath)
+	for _, cont := range podData.Pod.Spec.Containers {
+		for _, volumeMount := range cont.VolumeMounts {
+			volume, err := getPodVolume(podData.Pod, volumeMount.Name)
 			if err != nil {
-				log.G(Ctx).Error(err)
 				return "", err
 			}
 
-			log.G(Ctx).Debug(edPath)
+			retrievedContainer, err := getRetrievedContainer(podData, cont.Name)
+			if err != nil {
+				return "", err
+			}
 
-			for _, mntData := range edPath {
-				mountedData += mntData
+			switch {
+			case volume.ConfigMap != nil:
+				retrievedConfigMap, err := getRetrievedConfigMap(retrievedContainer, volume.ConfigMap.Name, cont.Name, podName)
+				if err != nil {
+					return "", err
+				}
+
+				err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedConfigMap, volumeMount, volume, mountedDataSB)
+				if err != nil {
+					return "", err
+				}
+
+			case volume.Projected != nil:
+				retrievedProjectedVolumeMap, err := getRetrievedProjectedVolumeMap(retrievedContainer, volume.Name, cont.Name, podName)
+				if err != nil {
+					return "", err
+				}
+
+				err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedProjectedVolumeMap, volumeMount, volume, mountedDataSB)
+				if err != nil {
+					return "", err
+				}
+
+			case volume.Secret != nil:
+				retrievedSecret, err := getRetrievedSecret(retrievedContainer, volume.Name, cont.Name, podName)
+				if err != nil {
+					return "", err
+				}
+
+				err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedSecret, volumeMount, volume, mountedDataSB)
+				if err != nil {
+					return "", err
+				}
+
+			case volume.EmptyDir != nil:
+				// retrievedContainer.EmptyDirs is deprecated in favor of each plugin giving its own emptyDir path, that will be built in mountData().
+				edPath, _, err := mountData(Ctx, config, container, "emptyDir", volumeMount, volume, workingPath)
+				if err != nil {
+					log.G(Ctx).Error(err)
+					return "", err
+				}
+
+				log.G(Ctx).Debug("edPath: ", edPath)
+
+				for _, mntData := range edPath {
+					mountedDataSB.WriteString(mntData)
+				}
+
+			default:
+				log.G(Ctx).Warningf("Silently ignoring unknown volume type of volume: %s in pod %s", volume.Name, podName)
+				return "", nil
 			}
 		}
-
 	}
 
+	mountedData := mountedDataSB.String()
 	if last := len(mountedData) - 1; last >= 0 && mountedData[last] == ',' {
 		mountedData = mountedData[:last]
 	}
@@ -669,252 +763,204 @@ func deleteContainer(Ctx context.Context, config SlurmConfig, podUID string, JID
 	return nil
 }
 
-// mountData is called by prepareMounts and creates files and directory according to their definition in the pod structure.
-// The data parameter is an interface and it can be of type v1.ConfigMap, v1.Secret and string (for the empty dir).
-// Returns 2 slices of string, one containing the ConfigMaps/Secrets/EmptyDirs paths and one the list of relatives ENVS to be used
-// to create the files inside the container.
-// It also returns the first encountered error.
-func mountData(Ctx context.Context, config SlurmConfig, pod v1.Pod, container v1.Container, data interface{}, path string) ([]string, string, error) {
-	span := trace.SpanFromContext(Ctx)
-	start := time.Now().UnixMicro()
-	if config.ExportPodData {
-		for _, mountSpec := range container.VolumeMounts {
-			switch mount := data.(type) {
-			case v1.ConfigMap:
-				span.AddEvent("Preparing ConfigMap mount")
-				for _, vol := range pod.Spec.Volumes {
-					if vol.ConfigMap != nil && vol.Name == mountSpec.Name && mount.Name == vol.ConfigMap.Name {
-						configMaps := make(map[string]string)
-						var configMapNamePath []string
-						var env string
+// For simple volume type like configMap, secret, projectedVolumeMap.
+func mountDataSimpleVolume(
+	Ctx context.Context,
+	container v1.Container,
+	path string,
+	span trace.Span,
+	volumeMount v1.VolumeMount,
+	mountDataFiles map[string][]byte,
+	start int64,
+	volumeType string,
+	fileMode os.FileMode,
+) ([]string, []string, error) {
 
-						err := os.RemoveAll(path + "/configMaps/" + mount.Name)
-						if err != nil {
-							log.G(Ctx).Error("Unable to delete root folder")
-							return []string{}, "", err
-						}
+	span.AddEvent("Preparing " + volumeType + " mount")
 
-						//if podVolumeSpec != nil && podVolumeSpec.ConfigMap != nil {
-						log.G(Ctx).Info("--- Mounting ConfigMap " + mountSpec.Name)
-						//mode := os.FileMode(*podVolumeSpec.ConfigMap.DefaultMode)
-						mode := os.FileMode(0644)
-						podConfigMapDir := filepath.Join(path+"/", "configMaps/", mountSpec.Name)
+	// Slice of elements of "[host path]:[container volume mount path]"
+	var volumesHostToContainerPaths []string
+	var envVarNames []string
 
-						for key := range mount.Data {
-							configMaps[key] = mount.Data[key]
-							fullPath := filepath.Join(podConfigMapDir, key)
-							hexString := stringToHex(fullPath)
-							mode := ""
-							if mountSpec.ReadOnly {
-								mode = ":ro"
-							} else {
-								mode = ":rw"
-							}
-							fullPath += (":" + mountSpec.MountPath + "/" + key + mode + " ")
-							configMapNamePath = append(configMapNamePath, fullPath)
+	err := os.RemoveAll(path + "/" + volumeType + "/" + volumeMount.Name)
 
-							if os.Getenv("SHARED_FS") != "true" {
-								envTemp := string(container.Name) + "_CFG_" + string(hexString)
-								log.G(Ctx).Debug("---- Setting env " + env + " to mount the file later")
-								err = os.Setenv(env, mount.Data[key])
-								if err != nil {
-									log.G(Ctx).Error("Unable to set ENV for cfgmap " + key)
-									return []string{}, "", err
-								}
-								env = envTemp
-							}
-						}
+	if err != nil {
+		log.G(Ctx).Error("Unable to delete root folder")
+		return []string{}, nil, err
+	}
 
-						if os.Getenv("SHARED_FS") == "true" {
-							log.G(Ctx).Info("--- Shared FS enabled, files will be directly created before the job submission")
-							cmd := []string{"-p " + podConfigMapDir}
-							shell := exec2.ExecTask{
-								Command: "mkdir",
-								Args:    cmd,
-								Shell:   true,
-							}
+	log.G(Ctx).Info("--- Mounting ", volumeType, ": "+volumeMount.Name)
+	podVolumeDir := filepath.Join(path, volumeType, volumeMount.Name)
 
-							execReturn, err := shell.Execute()
+	for key := range mountDataFiles {
+		fullPath := filepath.Join(podVolumeDir, key)
+		hexString := stringToHex(fullPath)
+		mode := ""
+		if volumeMount.ReadOnly {
+			mode = ":ro"
+		} else {
+			mode = ":rw"
+		}
+		fullPath += (":" + volumeMount.MountPath + "/" + key + mode + " ")
+		volumesHostToContainerPaths = append(volumesHostToContainerPaths, fullPath)
 
-							if err != nil {
-								log.G(Ctx).Error(err)
-								return []string{}, "", err
-							} else if execReturn.Stderr != "" {
-								log.G(Ctx).Error(execReturn.Stderr)
-								return []string{}, "", errors.New(execReturn.Stderr)
-							} else {
-								log.G(Ctx).Debug("--- Created folder " + podConfigMapDir)
-							}
+		if os.Getenv("SHARED_FS") != "true" {
+			currentEnvVarName := string(container.Name) + "_" + volumeType + "_" + hexString
+			log.G(Ctx).Debug("---- Setting env " + currentEnvVarName + " to mount the file later")
+			err = os.Setenv(currentEnvVarName, string(mountDataFiles[key]))
+			if err != nil {
+				log.G(Ctx).Error("--- Shared FS disabled, unable to set ENV for ", volumeType, "key: ", key, " env name: ", currentEnvVarName)
+				return []string{}, nil, err
+			}
+			envVarNames = append(envVarNames, currentEnvVarName)
+		}
+	}
 
-							log.G(Ctx).Debug("--- Writing ConfigMaps files")
-							for k, v := range configMaps {
-								// TODO: Ensure that these files are deleted in failure cases
-								fullPath := filepath.Join(podConfigMapDir, k)
-								err = os.WriteFile(fullPath, []byte(v), mode)
-								if err != nil {
-									log.G(Ctx).Errorf("Could not write ConfigMap file %s", fullPath)
-									os.RemoveAll(fullPath)
-									if err != nil {
-										log.G(Ctx).Error("Unable to remove file " + fullPath)
-										return []string{}, "", err
-									}
-									return []string{}, "", err
-								} else {
-									log.G(Ctx).Debug("Written ConfigMap file " + fullPath)
-								}
-							}
-						}
-						duration := time.Now().UnixMicro() - start
-						span.AddEvent("Prepared ConfigMap mounts", trace.WithAttributes(
-							attribute.String("mountdata.container.name", container.Name),
-							attribute.Int64("mountdata.duration", duration),
-							attribute.StringSlice("mountdata.container.configmaps", configMapNamePath)))
-						return configMapNamePath, env, nil
-					}
+	if os.Getenv("SHARED_FS") == "true" {
+		log.G(Ctx).Info("--- Shared FS enabled, files will be directly created before the job submission")
+		err := os.MkdirAll(podVolumeDir, os.ModeDir)
+		if err != nil {
+			return []string{}, nil, fmt.Errorf("could not create whole directory of %s root cause %w", podVolumeDir, err)
+		}
+		log.G(Ctx).Debug("--- Created folder ", podVolumeDir)
+		/*
+			cmd := []string{"-p " + podVolumeDir}
+			shell := exec2.ExecTask{
+				Command: "mkdir",
+				Args:    cmd,
+				Shell:   true,
+			}
+
+			execReturn, err := shell.Execute()
+			if strings.Compare(execReturn.Stdout, "") != 0 {
+				log.G(Ctx).Error(err)
+				return []string{}, nil, err
+			}
+			if execReturn.Stderr != "" {
+				log.G(Ctx).Error(execReturn.Stderr)
+				return []string{}, nil, err
+			} else {
+				log.G(Ctx).Debug("--- Created folder " + podVolumeDir)
+			}
+		*/
+
+		log.G(Ctx).Debug("--- Writing ", volumeType, " files")
+		for k, v := range mountDataFiles {
+			// TODO: Ensure that these files are deleted in failure cases
+			fullPath := filepath.Join(podVolumeDir, k)
+
+			// mode := os.FileMode(0644)
+			err := os.WriteFile(fullPath, v, fileMode)
+			if err != nil {
+				log.G(Ctx).Errorf("Could not write %s file %s", volumeType, fullPath)
+				err = os.RemoveAll(fullPath)
+				if err != nil {
+					log.G(Ctx).Error("Unable to remove file ", fullPath)
+					return []string{}, nil, err
 				}
-				//}
-
-			case v1.Secret:
-				span.AddEvent("Preparing ConfigMap mount")
-				for _, vol := range pod.Spec.Volumes {
-					if vol.Secret != nil && vol.Name == mountSpec.Name && mount.Name == vol.Secret.SecretName {
-						secrets := make(map[string][]byte)
-						var secretNamePath []string
-						var env string
-
-						err := os.RemoveAll(path + "/secrets/" + mountSpec.Name)
-
-						if err != nil {
-							log.G(Ctx).Error("Unable to delete root folder")
-							return []string{}, "", err
-						}
-
-						//if podVolumeSpec != nil && podVolumeSpec.Secret != nil {
-						log.G(Ctx).Info("--- Mounting Secret " + mountSpec.Name)
-						mode := os.FileMode(0644)
-						podSecretDir := filepath.Join(path+"/", "secrets/", mountSpec.Name)
-
-						if mount.Data != nil {
-							for key := range mount.Data {
-								secrets[key] = mount.Data[key]
-								fullPath := filepath.Join(podSecretDir, key)
-								hexString := stringToHex(fullPath)
-								mode := ""
-								if mountSpec.ReadOnly {
-									mode = ":ro"
-								} else {
-									mode = ":rw"
-								}
-								fullPath += (":" + mountSpec.MountPath + "/" + key + mode + " ")
-								secretNamePath = append(secretNamePath, fullPath)
-
-								if os.Getenv("SHARED_FS") != "true" {
-									envTemp := string(container.Name) + "_SECRET_" + hexString
-									log.G(Ctx).Debug("---- Setting env " + env + " to mount the file later")
-									err = os.Setenv(env, string(mount.Data[key]))
-									if err != nil {
-										log.G(Ctx).Error("Unable to set ENV for secret " + key)
-										return []string{}, "", err
-									}
-									env = envTemp
-								}
-							}
-						}
-
-						if os.Getenv("SHARED_FS") == "true" {
-							log.G(Ctx).Info("--- Shared FS enabled, files will be directly created before the job submission")
-							cmd := []string{"-p " + podSecretDir}
-							shell := exec2.ExecTask{
-								Command: "mkdir",
-								Args:    cmd,
-								Shell:   true,
-							}
-
-							execReturn, err := shell.Execute()
-							if strings.Compare(execReturn.Stdout, "") != 0 {
-								log.G(Ctx).Error(err)
-								return []string{}, "", err
-							}
-							if execReturn.Stderr != "" {
-								log.G(Ctx).Error(execReturn.Stderr)
-								return []string{}, "", err
-							} else {
-								log.G(Ctx).Debug("--- Created folder " + podSecretDir)
-							}
-
-							log.G(Ctx).Debug("--- Writing Secret files")
-							for k, v := range secrets {
-								// TODO: Ensure that these files are deleted in failure cases
-								fullPath := filepath.Join(podSecretDir, k)
-								os.WriteFile(fullPath, v, mode)
-								if err != nil {
-									log.G(Ctx).Errorf("Could not write Secret file %s", fullPath)
-									err = os.RemoveAll(fullPath)
-									if err != nil {
-										log.G(Ctx).Error("Unable to remove file " + fullPath)
-										return []string{}, "", err
-									}
-									return []string{}, "", err
-								} else {
-									log.G(Ctx).Debug("--- Written Secret file " + fullPath)
-								}
-							}
-						}
-						duration := time.Now().UnixMicro() - start
-						span.AddEvent("Prepared Secrets mounts", trace.WithAttributes(
-							attribute.String("mountdata.container.name", container.Name),
-							attribute.Int64("mountdata.duration", duration),
-							attribute.StringSlice("mountdata.container.secrets", secretNamePath)))
-						return secretNamePath, env, nil
-					}
-				}
-				//}
-
-			case string:
-				span.AddEvent("Preparing EmptyDirs mount")
-				var edPaths []string
-				for _, vol := range pod.Spec.Volumes {
-					for _, mountSpec := range container.VolumeMounts {
-						if vol.EmptyDir != nil && vol.Name == mountSpec.Name {
-							var edPath string
-							edPath = filepath.Join(path + "/" + "emptyDirs/" + vol.Name)
-							log.G(Ctx).Info("-- Creating EmptyDir in " + edPath)
-							cmd := []string{"-p " + edPath}
-							shell := exec2.ExecTask{
-								Command: "mkdir",
-								Args:    cmd,
-								Shell:   true,
-							}
-
-							_, err := shell.Execute()
-							if err != nil {
-								log.G(Ctx).Error(err)
-								return []string{}, "", err
-							} else {
-								log.G(Ctx).Debug("-- Created EmptyDir in " + edPath)
-							}
-
-							mode := ""
-							if mountSpec.ReadOnly {
-								mode = ":ro"
-							} else {
-								mode = ":rw"
-							}
-							edPath += (":" + mountSpec.MountPath + mode + " ")
-							edPaths = append(edPaths, " --bind "+edPath+" ")
-						}
-					}
-				}
-				duration := time.Now().UnixMicro() - start
-				span.AddEvent("Prepared Secrets mounts", trace.WithAttributes(
-					attribute.String("mountdata.container.name", container.Name),
-					attribute.Int64("mountdata.duration", duration),
-					attribute.StringSlice("mountdata.container.emptydirs", edPaths)))
-				return edPaths, "", nil
+				return []string{}, nil, err
+			} else {
+				log.G(Ctx).Debugf("--- Written %s file %s", volumeType, fullPath)
 			}
 		}
 	}
-	return []string{}, "", nil
+	duration := time.Now().UnixMicro() - start
+	span.AddEvent("Prepared "+volumeType+" mounts", trace.WithAttributes(
+		attribute.String("mountdata.container.name", container.Name),
+		attribute.Int64("mountdata.duration", duration),
+		attribute.StringSlice("mountdata.container."+volumeType, volumesHostToContainerPaths)))
+	return volumesHostToContainerPaths, envVarNames, nil
+}
+
+/*
+mountData is called by prepareMounts and creates files and directory according to their definition in the pod structure.
+The data parameter is an interface and it can be of type v1.ConfigMap, v1.Secret and string (for the empty dir).
+
+Returns:
+volumesHostToContainerPaths:
+
+	Each path is one file (not a directory). Eg for configMap that contains one file "file1" et one "file2".
+	volumesHostToContainerPaths := ["/path/to/file1:/path/container/file1:rw", "/path/to/file2:/path/container/file2:rw",]
+
+envVarNames:
+
+	For SHARED_FS = false mode. Each one is the environment variable name matching each item of volumesHostToContainerPaths (in the same order),
+	to be used to create the files inside the container.
+
+error:
+
+	The first encountered error, or nil
+*/
+func mountData(Ctx context.Context, config SlurmConfig, container v1.Container, retrievedDataObject interface{}, volumeMount v1.VolumeMount, volume v1.Volume, path string) ([]string, []string, error) {
+	span := trace.SpanFromContext(Ctx)
+	start := time.Now().UnixMicro()
+	if config.ExportPodData {
+		//for _, mountSpec := range container.VolumeMounts {
+		switch retrievedDataObjectCasted := retrievedDataObject.(type) {
+		case v1.ConfigMap:
+			volumeType := "configMaps"
+
+			// Convert map of string to map of []byte
+			mountDataConfigMapsAsBytes := make(map[string][]byte)
+			for key := range retrievedDataObjectCasted.Data {
+				mountDataConfigMapsAsBytes[key] = []byte(retrievedDataObjectCasted.Data[key])
+			}
+			fileMode := os.FileMode(*volume.ConfigMap.DefaultMode)
+			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, mountDataConfigMapsAsBytes, start, volumeType, fileMode)
+
+		case v1.Secret:
+			volumeType := "secrets"
+
+			fileMode := os.FileMode(*volume.Secret.DefaultMode)
+			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, retrievedDataObjectCasted.Data, start, volumeType, fileMode)
+
+		case string:
+			span.AddEvent("Preparing EmptyDirs mount")
+			var edPaths []string
+			if volume.EmptyDir != nil {
+				var edPath string
+				edPath = filepath.Join(path, "emptyDirs", volume.Name)
+				log.G(Ctx).Info("-- Creating EmptyDir in ", edPath)
+				err := os.MkdirAll(edPath, os.ModeDir)
+				if err != nil {
+					return []string{}, nil, fmt.Errorf("could not create whole directory of %s root cause %w", edPath, err)
+				}
+				log.G(Ctx).Debug("-- Created EmptyDir in ", edPath)
+				/*
+					cmd := []string{"-p " + edPath}
+					shell := exec2.ExecTask{
+						Command: "mkdir",
+						Args:    cmd,
+						Shell:   true,
+					}
+
+					_, err := shell.Execute()
+					if err != nil {
+						log.G(Ctx).Error(err)
+						return []string{}, nil, err
+					} else {
+						log.G(Ctx).Debug("-- Created EmptyDir in ", edPath)
+					}
+				*/
+
+				mode := ""
+				if volumeMount.ReadOnly {
+					mode = ":ro"
+				} else {
+					mode = ":rw"
+				}
+				edPath += (":" + volumeMount.MountPath + mode + " ")
+				edPaths = append(edPaths, " --bind "+edPath+" ")
+			}
+			duration := time.Now().UnixMicro() - start
+			span.AddEvent("Prepared emptydir mounts", trace.WithAttributes(
+				attribute.String("mountdata.container.name", container.Name),
+				attribute.Int64("mountdata.duration", duration),
+				attribute.StringSlice("mountdata.container.emptydirs", edPaths)))
+			return edPaths, nil, nil
+		}
+	}
+	return nil, nil, nil
 }
 
 // checkIfJidExists checks if a JID is in the main JIDs struct
