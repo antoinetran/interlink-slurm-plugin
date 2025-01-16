@@ -905,14 +905,23 @@ func mountData(Ctx context.Context, config SlurmConfig, container v1.Container, 
 		//for _, mountSpec := range container.VolumeMounts {
 		switch retrievedDataObjectCasted := retrievedDataObject.(type) {
 		case v1.ConfigMap:
-			volumeType := "configMaps"
+			var volumeType string
+			var defaultMode *int32
+			if volume.ConfigMap != nil {
+				volumeType = "configMaps"
+				defaultMode = volume.ConfigMap.DefaultMode
+
+			} else if volume.Projected != nil {
+				volumeType = "projectedVolumeMaps"
+				defaultMode = volume.Projected.DefaultMode
+			}
 
 			// Convert map of string to map of []byte
 			mountDataConfigMapsAsBytes := make(map[string][]byte)
 			for key := range retrievedDataObjectCasted.Data {
 				mountDataConfigMapsAsBytes[key] = []byte(retrievedDataObjectCasted.Data[key])
 			}
-			fileMode := GetFileMode(volume.ConfigMap.DefaultMode)
+			fileMode := GetFileMode(defaultMode)
 			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, mountDataConfigMapsAsBytes, start, volumeType, fileMode)
 
 		case v1.Secret:
