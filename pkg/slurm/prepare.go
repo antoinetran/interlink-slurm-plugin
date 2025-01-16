@@ -912,13 +912,13 @@ func mountData(Ctx context.Context, config SlurmConfig, container v1.Container, 
 			for key := range retrievedDataObjectCasted.Data {
 				mountDataConfigMapsAsBytes[key] = []byte(retrievedDataObjectCasted.Data[key])
 			}
-			fileMode := os.FileMode(*volume.ConfigMap.DefaultMode)
+			fileMode := GetFileMode(volume.ConfigMap.DefaultMode)
 			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, mountDataConfigMapsAsBytes, start, volumeType, fileMode)
 
 		case v1.Secret:
 			volumeType := "secrets"
 
-			fileMode := os.FileMode(*volume.Secret.DefaultMode)
+			fileMode := GetFileMode(volume.Secret.DefaultMode)
 			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, retrievedDataObjectCasted.Data, start, volumeType, fileMode)
 
 		case string:

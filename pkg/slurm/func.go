@@ -121,3 +121,15 @@ func GetSessionContext(r *http.Request) string {
 func GetSessionContextMessage(sessionContext string) string {
 	return "HTTP InterLink session " + sessionContext + ": "
 }
+
+// Get file mode, if nil, return default file mode 0644.
+func GetFileMode(fileModeIntPtr *int32) os.FileMode {
+	var fileMode os.FileMode
+	if fileModeIntPtr == nil {
+		fileMode = os.FileMode(*fileModeIntPtr)
+	} else {
+		// This is the default according to Kubernetes spec.
+		fileMode = os.FileMode(0644)
+	}
+	return fileMode
+}
