@@ -387,70 +387,68 @@ func prepareMounts(
 	log.G(Ctx).Info("-- Created directory ", workingPath)
 	podName := podData.Pod.Name
 
-	for _, cont := range podData.Pod.Spec.Containers {
-		for _, volumeMount := range cont.VolumeMounts {
-			volume, err := getPodVolume(podData.Pod, volumeMount.Name)
+	for _, volumeMount := range container.VolumeMounts {
+		volume, err := getPodVolume(podData.Pod, volumeMount.Name)
+		if err != nil {
+			return "", err
+		}
+
+		retrievedContainer, err := getRetrievedContainer(podData, container.Name)
+		if err != nil {
+			return "", err
+		}
+
+		switch {
+		case volume.ConfigMap != nil:
+			retrievedConfigMap, err := getRetrievedConfigMap(retrievedContainer, volume.ConfigMap.Name, container.Name, podName)
 			if err != nil {
 				return "", err
 			}
 
-			retrievedContainer, err := getRetrievedContainer(podData, cont.Name)
+			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedConfigMap, volumeMount, volume, &mountedDataSB)
 			if err != nil {
 				return "", err
 			}
 
-			switch {
-			case volume.ConfigMap != nil:
-				retrievedConfigMap, err := getRetrievedConfigMap(retrievedContainer, volume.ConfigMap.Name, cont.Name, podName)
-				if err != nil {
-					return "", err
-				}
-
-				err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedConfigMap, volumeMount, volume, &mountedDataSB)
-				if err != nil {
-					return "", err
-				}
-
-			case volume.Projected != nil:
-				retrievedProjectedVolumeMap, err := getRetrievedProjectedVolumeMap(retrievedContainer, volume.Name, cont.Name, podName)
-				if err != nil {
-					return "", err
-				}
-
-				err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedProjectedVolumeMap, volumeMount, volume, &mountedDataSB)
-				if err != nil {
-					return "", err
-				}
-
-			case volume.Secret != nil:
-				retrievedSecret, err := getRetrievedSecret(retrievedContainer, volume.Name, cont.Name, podName)
-				if err != nil {
-					return "", err
-				}
-
-				err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedSecret, volumeMount, volume, &mountedDataSB)
-				if err != nil {
-					return "", err
-				}
-
-			case volume.EmptyDir != nil:
-				// retrievedContainer.EmptyDirs is deprecated in favor of each plugin giving its own emptyDir path, that will be built in mountData().
-				edPath, _, err := mountData(Ctx, config, container, "emptyDir", volumeMount, volume, workingPath)
-				if err != nil {
-					log.G(Ctx).Error(err)
-					return "", err
-				}
-
-				log.G(Ctx).Debug("edPath: ", edPath)
-
-				for _, mntData := range edPath {
-					mountedDataSB.WriteString(mntData)
-				}
-
-			default:
-				log.G(Ctx).Warningf("Silently ignoring unknown volume type of volume: %s in pod %s", volume.Name, podName)
-				return "", nil
+		case volume.Projected != nil:
+			retrievedProjectedVolumeMap, err := getRetrievedProjectedVolumeMap(retrievedContainer, volume.Name, container.Name, podName)
+			if err != nil {
+				return "", err
 			}
+
+			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedProjectedVolumeMap, volumeMount, volume, &mountedDataSB)
+			if err != nil {
+				return "", err
+			}
+
+		case volume.Secret != nil:
+			retrievedSecret, err := getRetrievedSecret(retrievedContainer, volume.Name, container.Name, podName)
+			if err != nil {
+				return "", err
+			}
+
+			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedSecret, volumeMount, volume, &mountedDataSB)
+			if err != nil {
+				return "", err
+			}
+
+		case volume.EmptyDir != nil:
+			// retrievedContainer.EmptyDirs is deprecated in favor of each plugin giving its own emptyDir path, that will be built in mountData().
+			edPath, _, err := mountData(Ctx, config, container, "emptyDir", volumeMount, volume, workingPath)
+			if err != nil {
+				log.G(Ctx).Error(err)
+				return "", err
+			}
+
+			log.G(Ctx).Debug("edPath: ", edPath)
+
+			for _, mntData := range edPath {
+				mountedDataSB.WriteString(mntData)
+			}
+
+		default:
+			log.G(Ctx).Warningf("Silently ignoring unknown volume type of volume: %s in pod %s", volume.Name, podName)
+			return "", nil
 		}
 	}
 
@@ -910,7 +908,6 @@ func mountData(Ctx context.Context, config SlurmConfig, container v1.Container, 
 			if volume.ConfigMap != nil {
 				volumeType = "configMaps"
 				defaultMode = volume.ConfigMap.DefaultMode
-
 			} else if volume.Projected != nil {
 				volumeType = "projectedVolumeMaps"
 				defaultMode = volume.Projected.DefaultMode
