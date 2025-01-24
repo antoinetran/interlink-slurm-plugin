@@ -589,7 +589,7 @@ runInitCtn() {
   ctn="$1"
   shift
   printf "%s\n" "$(date -Is --utc) Running ${ctn}..."
-  time "$@" &> ${workingPath}/${ctn}.out
+  time ( "$@" ) &> ${workingPath}/${ctn}.out
   exitCode="$?"
   printf "%s\n" "${exitCode}" > ${workingPath}/${ctn}.status
   if test "${exitCode}" != 0 ; then
@@ -602,7 +602,7 @@ runInitCtn() {
 runCtn() {
   ctn="$1"
   shift
-  time "$@" &> ${workingPath}/${ctn}.out &
+  time ( "$@" ) &> ${workingPath}/${ctn}.out &
   pid="$!"
   printf "%s\n" "$(date -Is --utc) Running in background ${ctn} pid ${pid}..."
   pidCtns="${pidCtns} ${pid}:${ctn}"
@@ -621,7 +621,7 @@ waitCtns() {
     exitCode="$?"
     printf "%s\n" "${exitCode}" > ${workingPath}/${ctn}.status
     printf "%s\n" "$(date -Is --utc) Container ${ctn} pid ${pid} ended with status ${exitCode}."
-    test "${highestExitCode}" -lt ${exitCode}" && highestExitCode="${exitCode}"
+    test "${highestExitCode}" -lt "${exitCode}" && highestExitCode="${exitCode}"
   done
 }
 
@@ -643,7 +643,7 @@ highestExitCode=0
 	stringToBeWritten.WriteString(sbatch_common_funcs_macros)
 
 	// Adding the workingPath as variable.
-	stringToBeWritten.WriteString("workingPath=")
+	stringToBeWritten.WriteString("\nworkingPath=")
 	stringToBeWritten.WriteString(path)
 	stringToBeWritten.WriteString("\n")
 
