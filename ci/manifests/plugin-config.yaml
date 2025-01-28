@@ -18,4 +18,4 @@ Namespace: "vk"
 Tsocks: false
 TsocksPath: "$WORK/tsocks-1.8beta5+ds1/libtsocks.so"
 TsocksLoginNode: "login01"
-ShPath: /bin/sh
+BashPath: /bin/bash

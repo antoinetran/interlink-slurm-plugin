@@ -105,7 +105,7 @@ Namespace: "vk"
 Tsocks: false
 TsocksPath: "$WORK/tsocks-1.8beta5+ds1/libtsocks.so"
 TsocksLoginNode: "login01"
-ShPath: /bin/sh
+BashPath: /bin/bash
 VerboseLogging: true
 ErrorsOnlyLogging: false
 ```
@@ -139,7 +139,7 @@ building the docker image (`docker compose up -d --build --force-recreate` will 
 | Tsocks | true or false values only. Enables or Disables the use of tsocks library to allow proxy networking. Only implemented for the Slurm sidecar at the moment. |
 | TsocksPath | path to your tsocks library. |
 | TsocksLoginNode | specify an existing node to ssh to. It will be your "window to the external world" |
-| ShPath | Path to your sh shell |
+| BashPath | Path to your Bash shell |
 | VerboseLogging | Enable or disable Debug messages on logs. True or False values only |
 | ErrorsOnlyLogging | Specify if you want to get errors only on logs. True or false values only |
 

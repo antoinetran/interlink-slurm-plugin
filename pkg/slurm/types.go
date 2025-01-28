@@ -15,7 +15,7 @@ type SlurmConfig struct {
 	Tsocks            bool   `yaml:"Tsocks"`
 	Tsockspath        string `yaml:"TsocksPath"`
 	Tsockslogin       string `yaml:"TsocksLoginNode"`
-	ShPath            string `yaml:"ShPath"`
+	BashPath          string `yaml:"BashPath"`
 	VerboseLogging    bool   `yaml:"VerboseLogging"`
 	ErrorsOnlyLogging bool   `yaml:"ErrorsOnlyLogging"`
 	SingularityPrefix string `yaml:"SingularityPrefix"`
