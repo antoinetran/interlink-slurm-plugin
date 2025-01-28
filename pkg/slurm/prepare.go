@@ -84,7 +84,6 @@ func stringToHex(str string) string {
 // parsingTimeFromString parses time from a string and returns it into a variable of type time.Time.
 // The format time can be specified in the 3rd argument.
 func parsingTimeFromString(Ctx context.Context, stringTime string, timestampFormat string) (time.Time, error) {
-	parsedTime := time.Time{}
 	parts := strings.Fields(stringTime)
 	if len(parts) != 4 {
 		err := errors.New("invalid timestamp format")
