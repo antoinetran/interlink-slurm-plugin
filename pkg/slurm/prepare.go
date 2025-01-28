@@ -565,7 +565,7 @@ func produceSLURMScript(
 		prefix += "\n" + preExecAnnotations
 	}
 
-	sbatch_macros := "#!" + config.ShPath +
+	sbatch_macros := "#!" + config.BashPath +
 		"\n#SBATCH --job-name=" + podUID +
 		"\n#SBATCH --output=" + path + "/job.out" +
 		sbatchFlagsAsString +
