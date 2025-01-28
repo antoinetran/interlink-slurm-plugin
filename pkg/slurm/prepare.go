@@ -401,7 +401,7 @@ func prepareMounts(
 				return "", err
 			}
 
-			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedConfigMap, volumeMount, volume, &mountedDataSB)
+			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, *retrievedConfigMap, volumeMount, volume, &mountedDataSB)
 			if err != nil {
 				return "", err
 			}
@@ -412,7 +412,7 @@ func prepareMounts(
 				return "", err
 			}
 
-			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedProjectedVolumeMap, volumeMount, volume, &mountedDataSB)
+			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, *retrievedProjectedVolumeMap, volumeMount, volume, &mountedDataSB)
 			if err != nil {
 				return "", err
 			}
@@ -423,7 +423,7 @@ func prepareMounts(
 				return "", err
 			}
 
-			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, retrievedSecret, volumeMount, volume, &mountedDataSB)
+			err = prepareMountsSimpleVolume(Ctx, config, container, workingPath, *retrievedSecret, volumeMount, volume, &mountedDataSB)
 			if err != nil {
 				return "", err
 			}
