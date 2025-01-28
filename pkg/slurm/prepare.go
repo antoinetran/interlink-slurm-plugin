@@ -976,6 +976,8 @@ func mountData(Ctx context.Context, config SlurmConfig, container *v1.Container,
 				defaultMode = volume.Projected.DefaultMode
 			}
 
+			log.G(Ctx).Debugf("in mountData() volume found: %s type: %s", volumeMount.Name, volumeType)
+
 			// Convert map of string to map of []byte
 			mountDataConfigMapsAsBytes := make(map[string][]byte)
 			for key := range retrievedDataObjectCasted.Data {
@@ -986,6 +988,7 @@ func mountData(Ctx context.Context, config SlurmConfig, container *v1.Container,
 
 		case v1.Secret:
 			volumeType := "secrets"
+			log.G(Ctx).Debugf("in mountData() volume found: %s type: %s", volumeMount.Name, volumeType)
 
 			fileMode := os.FileMode(*volume.Secret.DefaultMode)
 			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, retrievedDataObjectCasted.Data, start, volumeType, fileMode)
@@ -994,6 +997,8 @@ func mountData(Ctx context.Context, config SlurmConfig, container *v1.Container,
 			span.AddEvent("Preparing EmptyDirs mount")
 			var edPaths []string
 			if volume.EmptyDir != nil {
+				log.G(Ctx).Debugf("in mountData() volume found: %s type: emptyDir", volumeMount.Name)
+
 				var edPath string
 				edPath = filepath.Join(path, "emptyDirs", volume.Name)
 				log.G(Ctx).Info("-- Creating EmptyDir in ", edPath)
@@ -1034,6 +1039,9 @@ func mountData(Ctx context.Context, config SlurmConfig, container *v1.Container,
 				attribute.Int64("mountdata.duration", duration),
 				attribute.StringSlice("mountdata.container.emptydirs", edPaths)))
 			return edPaths, nil, nil
+
+		default:
+			log.G(Ctx).Warningf("in mountData() volume %s with unknown retrievedDataObject", volumeMount.Name)
 		}
 	}
 	return nil, nil, nil
