@@ -195,7 +195,8 @@ func (h *SidecarHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request) 
 	containerOutputPath := path + "/" + req.ContainerName + ".out"
 	var output []byte
 	if req.Opts.Timestamps {
-		h.logErrorVerbose(sessionContextMessage+"unsupported option req.Opts.Timestamps, ignoring it", spanCtx, w, err)
+		//h.logErrorVerbose(sessionContextMessage+"unsupported option req.Opts.Timestamps, ignoring it", spanCtx, w, err)
+		log.G(h.Ctx).Warning(sessionContextMessage, "unsupported option req.Opts.Timestamps, ignoring it")
 		//return
 	}
 	containerOutput, err := h.ReadLogs(containerOutputPath, span, spanCtx, w, sessionContextMessage)
