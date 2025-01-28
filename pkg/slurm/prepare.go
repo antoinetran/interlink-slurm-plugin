@@ -262,10 +262,62 @@ func prepareEnvs(Ctx context.Context, config SlurmConfig, podData commonIL.Retri
 	return envs
 }
 
+func getRetrievedContainer(podData *commonIL.RetrievedPodData, containerName string) (*commonIL.RetrievedContainer, error) {
+	for _, container := range podData.Containers {
+		if container.Name == containerName {
+			return &container, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find retrieved container for %s in pod %s", containerName, podData.Pod.Name)
+}
+
+func getRetrievedConfigMap(retrievedContainer *commonIL.RetrievedContainer, configMapName string, containerName string, podName string) (*v1.ConfigMap, error) {
+	for _, configMap := range retrievedContainer.ConfigMaps {
+		if configMap.Name == configMapName {
+			return &configMap, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find configMap %s in container %s in pod %s", configMapName, containerName, podName)
+}
+
+func getRetrievedProjectedVolumeMap(retrievedContainer *commonIL.RetrievedContainer, projectedVolumeMapName string, containerName string, podName string) (*v1.ConfigMap, error) {
+	for _, retrievedProjectedVolumeMap := range retrievedContainer.ProjectedVolumeMaps {
+		if retrievedProjectedVolumeMap.Name == projectedVolumeMapName {
+			return &retrievedProjectedVolumeMap, nil
+		}
+	}
+
+	// This should not happen. Error case: building context for error log.
+	var retrievedProjectedVolumeMapKeys []string
+	for _, retrievedProjectedVolumeMap := range retrievedContainer.ProjectedVolumeMaps {
+		retrievedProjectedVolumeMapKeys = append(retrievedProjectedVolumeMapKeys, retrievedProjectedVolumeMap.Name)
+	}
+	return nil, fmt.Errorf("could not find projectedVolumeMap %s in container %s in pod %s current projectedVolumeMaps keys %s",
+		projectedVolumeMapName, containerName, podName, strings.Join(retrievedProjectedVolumeMapKeys, ","))
+}
+
+func getRetrievedSecret(retrievedContainer *commonIL.RetrievedContainer, secretName string, containerName string, podName string) (*v1.Secret, error) {
+	for _, retrievedSecret := range retrievedContainer.Secrets {
+		if retrievedSecret.Name == secretName {
+			return &retrievedSecret, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find secret %s in container %s in pod %s", secretName, containerName, podName)
+}
+
+func getPodVolume(pod *v1.Pod, volumeName string) (*v1.Volume, error) {
+	for _, vol := range pod.Spec.Volumes {
+		if vol.Name == volumeName {
+			return &vol, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find volume %s in pod %s", volumeName, pod.Name)
+}
+
 func prepareMountsSimpleVolume(
 	Ctx context.Context,
 	config SlurmConfig,
-	container v1.Container,
+	container *v1.Container,
 	workingPath string,
 	volumeObject interface{},
 	volumeMount v1.VolumeMount,
@@ -301,62 +353,6 @@ func prepareMountsSimpleVolume(
 	}
 	return nil
 }
-func getRetrievedContainer(podData commonIL.RetrievedPodData, containerName string) (commonIL.RetrievedContainer, error) {
-	for _, container := range podData.Containers {
-		if container.Name == containerName {
-			return container, nil
-		}
-	}
-	var emptyResult commonIL.RetrievedContainer
-	return emptyResult, fmt.Errorf("could not find retrieved container for %s in pod %s", containerName, podData.Pod.Name)
-}
-
-func getRetrievedConfigMap(retrievedContainer commonIL.RetrievedContainer, configMapName string, containerName string, podName string) (v1.ConfigMap, error) {
-	var emptyResult v1.ConfigMap
-	for _, configMap := range retrievedContainer.ConfigMaps {
-		if configMap.Name == configMapName {
-			return configMap, nil
-		}
-	}
-	return emptyResult, fmt.Errorf("could not find configMap %s in container %s in pod %s", configMapName, containerName, podName)
-}
-
-func getRetrievedProjectedVolumeMap(retrievedContainer commonIL.RetrievedContainer, projectedVolumeMapName string, containerName string, podName string) (v1.ConfigMap, error) {
-	var emptyResult v1.ConfigMap
-	for _, retrievedProjectedVolumeMap := range retrievedContainer.ProjectedVolumeMaps {
-		if retrievedProjectedVolumeMap.Name == projectedVolumeMapName {
-			return retrievedProjectedVolumeMap, nil
-		}
-	}
-
-	// This should not happen. Error case: building context for error log.
-	var retrievedProjectedVolumeMapKeys []string
-	for _, retrievedProjectedVolumeMap := range retrievedContainer.ProjectedVolumeMaps {
-		retrievedProjectedVolumeMapKeys = append(retrievedProjectedVolumeMapKeys, retrievedProjectedVolumeMap.Name)
-	}
-	return emptyResult, fmt.Errorf("could not find projectedVolumeMap %s in container %s in pod %s current projectedVolumeMaps keys %s",
-		projectedVolumeMapName, containerName, podName, strings.Join(retrievedProjectedVolumeMapKeys, ","))
-}
-
-func getRetrievedSecret(retrievedContainer commonIL.RetrievedContainer, secretName string, containerName string, podName string) (v1.Secret, error) {
-	var emptyResult v1.Secret
-	for _, retrievedSecret := range retrievedContainer.Secrets {
-		if retrievedSecret.Name == secretName {
-			return retrievedSecret, nil
-		}
-	}
-	return emptyResult, fmt.Errorf("could not find secret %s in container %s in pod %s", secretName, containerName, podName)
-}
-
-func getPodVolume(pod v1.Pod, volumeName string) (v1.Volume, error) {
-	for _, vol := range pod.Spec.Volumes {
-		if vol.Name == volumeName {
-			return vol, nil
-		}
-	}
-	var emptyResult v1.Volume
-	return emptyResult, fmt.Errorf("could not find volume %s in pod %s", volumeName, pod.Name)
-}
 
 // prepareMounts iterates along the struct provided in the data parameter and checks for ConfigMaps, Secrets and EmptyDirs to be mounted.
 // For each element found, the mountData function is called.
@@ -367,8 +363,8 @@ func getPodVolume(pod v1.Pod, volumeName string) (v1.Volume, error) {
 func prepareMounts(
 	Ctx context.Context,
 	config SlurmConfig,
-	podData commonIL.RetrievedPodData,
-	container v1.Container,
+	podData *commonIL.RetrievedPodData,
+	container *v1.Container,
 	workingPath string,
 ) (string, error) {
 	span := trace.SpanFromContext(Ctx)
@@ -388,7 +384,8 @@ func prepareMounts(
 	podName := podData.Pod.Name
 
 	for _, volumeMount := range container.VolumeMounts {
-		volume, err := getPodVolume(podData.Pod, volumeMount.Name)
+		volumePtr, err := getPodVolume(&podData.Pod, volumeMount.Name)
+		volume := *volumePtr
 		if err != nil {
 			return "", err
 		}
@@ -838,7 +835,7 @@ func deleteContainer(Ctx context.Context, config SlurmConfig, podUID string, JID
 // For simple volume type like configMap, secret, projectedVolumeMap.
 func mountDataSimpleVolume(
 	Ctx context.Context,
-	container v1.Container,
+	container *v1.Container,
 	path string,
 	span trace.Span,
 	volumeMount v1.VolumeMount,
@@ -963,7 +960,7 @@ error:
 
 	The first encountered error, or nil
 */
-func mountData(Ctx context.Context, config SlurmConfig, container v1.Container, retrievedDataObject interface{}, volumeMount v1.VolumeMount, volume v1.Volume, path string) ([]string, []string, error) {
+func mountData(Ctx context.Context, config SlurmConfig, container *v1.Container, retrievedDataObject interface{}, volumeMount v1.VolumeMount, volume v1.Volume, path string) ([]string, []string, error) {
 	span := trace.SpanFromContext(Ctx)
 	start := time.Now().UnixMicro()
 	if config.ExportPodData {
@@ -985,13 +982,13 @@ func mountData(Ctx context.Context, config SlurmConfig, container v1.Container, 
 			for key := range retrievedDataObjectCasted.Data {
 				mountDataConfigMapsAsBytes[key] = []byte(retrievedDataObjectCasted.Data[key])
 			}
-			fileMode := GetFileMode(defaultMode)
+			fileMode := os.FileMode(*defaultMode)
 			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, mountDataConfigMapsAsBytes, start, volumeType, fileMode)
 
 		case v1.Secret:
 			volumeType := "secrets"
 
-			fileMode := GetFileMode(volume.Secret.DefaultMode)
+			fileMode := os.FileMode(*volume.Secret.DefaultMode)
 			return mountDataSimpleVolume(Ctx, container, path, span, volumeMount, retrievedDataObjectCasted.Data, start, volumeType, fileMode)
 
 		case string:

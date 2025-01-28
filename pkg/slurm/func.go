@@ -122,6 +122,7 @@ func GetSessionContextMessage(sessionContext string) string {
 	return "HTTP InterLink session " + sessionContext + ": "
 }
 
+/*
 // Get file mode, if nil, return default file mode 0644.
 func GetFileMode(fileModeIntPtr *int32) os.FileMode {
 	var fileMode os.FileMode
@@ -133,3 +134,4 @@ func GetFileMode(fileModeIntPtr *int32) os.FileMode {
 	}
 	return fileMode
 }
+*/
