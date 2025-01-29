@@ -581,6 +581,23 @@ func produceSLURMScript(
 # Functions
 ####
 
+# Wait for 60 times 2s if the file exist. The file can be a directory or symlink or anything.
+waitFileExist() {
+  filePath="$1"
+  printf "%s\n" "$(date -Is --utc) Checking if file exists: ${filePath} ..."
+  i=1
+  iMax=60
+  while test "${i}" -le "${iMax}" ; do
+	if test -e "${filePath}" ; then
+	  printf "%s\n" "$(date -Is --utc) attempt ${i}/${iMax} file found ${filePath}"
+	  break
+	fi
+    printf "%s\n" "$(date -Is --utc) attempt ${i}/${iMax} file not found ${filePath}"
+	i=$((i + 1))
+    sleep 2
+  done
+}
+
 runInitCtn() {
   ctn="$1"
   shift
@@ -588,6 +605,7 @@ runInitCtn() {
   time ( "$@" ) &> ${workingPath}/${ctn}.out
   exitCode="$?"
   printf "%s\n" "${exitCode}" > ${workingPath}/${ctn}.status
+  waitFileExist "${workingPath}/${ctn}.status"
   if test "${exitCode}" != 0 ; then
     printf "%s\n" "$(date -Is --utc) InitContainer ${ctn} failed with status ${exitCode}" >&2
     # InitContainers are fail-fast.
@@ -616,16 +634,19 @@ waitCtns() {
     printf "%s\n" "$(date -Is --utc) Waiting for container ${ctn} pid ${pid}..."
     wait "${pid}"
     exitCode="$?"
-    printf "%s\n" "${exitCode}" > ${workingPath}/${ctn}.status
+    printf "%s\n" "${exitCode}" > "${workingPath}/${ctn}.status"
     printf "%s\n" "$(date -Is --utc) Container ${ctn} pid ${pid} ended with status ${exitCode}."
+	waitFileExist "${workingPath}/${ctn}.status"
     test "${highestExitCode}" -lt "${exitCode}" && highestExitCode="${exitCode}"
   done
 }
 
 endScript() {
-  printf "%s\n" "$(date -Is --utc) End of script, highest exit code ${highestExitCode}, sleeping 30s in case of..."
+  printf "%s\n" "$(date -Is --utc) End of script, highest exit code ${highestExitCode}..."
+  # Deprecated the sleep in favor of checking the status file with waitFileExist (see above).
+  #printf "%s\n" "$(date -Is --utc) Sleeping 30s in case of..."
   # For some reason, the status files does not have the time for being written in some HPC, because slurm kills the job too soon.
-  sleep 30
+  #sleep 30
 
   exit "${highestExitCode}"
 }
@@ -679,7 +700,7 @@ highestExitCode=0
 	stringToBeWritten.WriteString(postfix)
 
 	// Waits for all containers to end, then exit with the highest exit code.
-	stringToBeWritten.WriteString("\nwaitCtns\nendScript\n")
+	stringToBeWritten.WriteString("\nwaitCtns\nendScript\n\n")
 
 	_, err = f.WriteString(stringToBeWritten.String())
 
