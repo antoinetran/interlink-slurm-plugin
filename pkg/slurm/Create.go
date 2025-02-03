@@ -126,12 +126,16 @@ func (h *SidecarHandler) SubmitHandler(w http.ResponseWriter, r *http.Request) {
 			imagePrefix = imagePrefixAnnotation
 			imagePrefixAnnotationFound = true
 		}
-		log.G(h.Ctx).Info("image-uri prefix from annotation? ", imagePrefixAnnotationFound, " value: ", imagePrefix)
+		log.G(h.Ctx).Info("imagePrefix from annotation? ", imagePrefixAnnotationFound, " value: ", imagePrefix)
 
-		if !strings.HasPrefix(image, imagePrefix) {
+		// If imagePrefix begins with "/", then it must be an absolute path instead of for example docker://some/image.
+		// The file should be one of https://docs.sylabs.io/guides/3.1/user-guide/cli/singularity_run.html#synopsis format.
+		if strings.HasPrefix(image, "/") {
+			log.G(h.Ctx).Warningf("image set to %s is an absolute path. Prefix won't be added.", image)
+		} else if !strings.HasPrefix(image, imagePrefix) {
 			image = imagePrefix + container.Image
 		} else {
-			log.G(h.Ctx).Warning("- image-uri annotation specified but already present in the image name. Prefix won't be added.")
+			log.G(h.Ctx).Warningf("imagePrefix set to %s but already present in the image name %s. Prefix won't be added.", imagePrefix, image)
 		}
 
 		log.G(h.Ctx).Debug("-- Appending all commands together...")
