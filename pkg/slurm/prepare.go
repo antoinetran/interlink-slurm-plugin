@@ -448,7 +448,6 @@ func prepareMounts(
 
 		default:
 			log.G(Ctx).Warningf("Silently ignoring unknown volume type of volume: %s in pod %s", volume.Name, podName)
-			return "", nil
 		}
 	}
 
